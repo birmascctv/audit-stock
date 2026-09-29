@@ -226,5 +226,30 @@
       "auditorName": "Bertha Evania"
     }
   ],
-  "auditHistory": []
+  "auditHistory": [],
+  "auditState": {
+    "birmas-kuningan": {
+      "counts": {},
+      "scanLogs": []
+    }
+  },
+  "users": [
+    {
+      "id": "user-admin",
+      "username": "admin",
+      "email": "admin@birmas.id",
+      "password": "admin123",
+      "name": "Bertha Evania",
+      "role": "Audit Supervisor"
+    },
+    {
+      "id": "user-auditor",
+      "username": "auditor",
+      "email": "auditor@birmas.id",
+      "password": "birmas2026",
+      "name": "Store Auditor Staff",
+      "role": "Store Auditor"
+    }
+  ],
+  "lastSaved": "2026-09-29T08:23:51.613Z"
 }

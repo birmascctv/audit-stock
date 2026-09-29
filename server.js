@@ -361,21 +361,150 @@ async function runBackgroundWordPressSync(db) {
 
     if (response.ok) {
       const json = await response.json();
-      if (json && Array.isArray(json.products)) {
-        for (const item of json.products) {
-          const loc = (item.location || '').toLowerCase();
-          const targetStore = db.stores.find((s) => s.id === loc || s.locationCode.toLowerCase() === loc || s.name.toLowerCase().includes(loc));
-          const storeId = targetStore ? targetStore.id : 'birmas-kuningan';
+      const rawItems = Array.isArray(json)
+        ? json
+        : Array.isArray(json.products)
+        ? json.products
+        : Array.isArray(json.data)
+        ? json.data
+        : [];
 
-          const existing = db.products.find((p) => p.varian.toLowerCase() === (item.variant_title || '').toLowerCase() || p.productTitle === item.variant_title);
+      if (rawItems.length > 0) {
+        let updatedCount = 0;
+        for (const item of rawItems) {
+          // Helper to extract string or value from Pods field
+          const extractField = (f) => {
+            if (f === null || f === undefined) return '';
+            if (Array.isArray(f) && f.length > 0) return extractField(f[0]);
+            if (typeof f === 'object') return (f.value ?? f.rendered ?? f.post_title ?? f.name ?? f.slug ?? '').toString();
+            return f.toString();
+          };
+
+          // 1. Resolve Location from Pods (supports location array with post_title, post_name, branch_code_esb, outlet_code)
+          let locationRaw = '';
+          if (Array.isArray(item.location) && item.location.length > 0) {
+            const locObj = item.location[0];
+            locationRaw = `${locObj.post_title || ''} ${locObj.post_name || ''} ${locObj.branch_code_esb || ''} ${locObj.outlet_code || ''}`.toLowerCase();
+          } else {
+            locationRaw = extractField(item.location || item.meta?.location || item.branch).toLowerCase();
+          }
+
+          // Match store location
+          let targetStore = db.stores.find((s) => {
+            const sName = s.name.toLowerCase();
+            const sId = s.id.toLowerCase();
+            const sCode = s.locationCode.toLowerCase();
+            const sEsb = (s.esbBranchCode || '').toLowerCase();
+            return (
+              locationRaw.includes(sName) ||
+              locationRaw.includes(sId) ||
+              (sCode && locationRaw.includes(sCode)) ||
+              (sEsb && locationRaw.includes(sEsb))
+            );
+          });
+
+          // Auto-create store if location object exists but not matched yet
+          if (!targetStore && Array.isArray(item.location) && item.location.length > 0) {
+            const locObj = item.location[0];
+            const newStoreId = `birmas-${(locObj.post_name || locObj.post_title || 'branch').toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+            targetStore = {
+              id: newStoreId,
+              name: locObj.post_title || 'Birmas Branch',
+              locationCode: locObj.outlet_code ? `BRM-${locObj.outlet_code.toUpperCase()}` : `BRM-${newStoreId.substring(7, 10).toUpperCase()}`,
+              esbBranchCode: locObj.branch_code_esb || '',
+            };
+            db.stores.push(targetStore);
+            if (!db.auditState[newStoreId]) {
+              db.auditState[newStoreId] = { counts: {}, scanLogs: [] };
+            }
+          }
+
+          const storeId = targetStore ? targetStore.id : (db.wpConfig.selectedStoreId || db.stores[0]?.id || 'birmas-kuningan');
+
+          // 2. Resolve Variant & Product Details
+          let variantObj = null;
+          let productObj = null;
+          if (Array.isArray(item.product_variant) && item.product_variant.length > 0) {
+            variantObj = item.product_variant[0];
+            if (Array.isArray(variantObj.product) && variantObj.product.length > 0) {
+              productObj = variantObj.product[0];
+            }
+          }
+
+          const variantId = variantObj?.ID ? `wp-${variantObj.ID}` : (item.id ? `wp-${item.id}` : '');
+          const productTitle = productObj?.post_title || extractField(item.product_variant_title) || extractField(item.variant_title) || extractField(item.title) || 'Birmas Product';
+          const variantName = variantObj?.variant || extractField(item.variant) || 'Standard';
+          const barcode = extractField(item.barcode || variantObj?.barcode || item.meta?.barcode || item.code).trim();
+          const sku = extractField(item.sku || variantObj?.sku || item.meta?.sku).trim();
+          const brand = productTitle.split(' ')[0] || extractField(item.brand) || 'Birmas';
+          const price = Number(variantObj?.regular_price ?? item.regular_price ?? item.price ?? 0);
+          const volume = Number(variantObj?.volume ?? item.volume ?? 330);
+          const unitVolume = variantObj?.unit_volume ?? item.unit_volume ?? 'ml';
+
+          // 3. Resolve Stock
+          let stockVal = 0;
+          if (typeof item.stock === 'object' && item.stock !== null) {
+            stockVal = Number(item.stock.value ?? item.stock.rendered ?? 0);
+          } else {
+            stockVal = Number(item.stock ?? item.stock_qty ?? item.quantity ?? item.qty ?? item.meta?.stock ?? 0);
+          }
+
+          // 4. Find existing product by ID, barcode, SKU, or Title
+          let existing = null;
+          if (variantId) {
+            existing = db.products.find((p) => p.id === variantId);
+          }
+          if (!existing && barcode) {
+            existing = db.products.find((p) => p.barcode === barcode);
+          }
+          if (!existing && sku) {
+            existing = db.products.find((p) => p.sku === sku);
+          }
+          if (!existing && productTitle) {
+            const tLower = productTitle.toLowerCase();
+            existing = db.products.find((p) =>
+              p.productTitle.toLowerCase() === tLower ||
+              tLower.includes(p.varian.toLowerCase()) ||
+              p.productTitle.toLowerCase().includes(tLower)
+            );
+          }
+
           if (existing) {
-            existing.stockByStore[storeId] = Number(item.stock) || 0;
+            if (!existing.stockByStore) existing.stockByStore = {};
+            existing.stockByStore[storeId] = stockVal;
+            if (barcode && !existing.barcode) existing.barcode = barcode;
+            if (sku && !existing.sku) existing.sku = sku;
+            if (price && !existing.price) existing.price = price;
             existing.lastUpdated = new Date().toISOString();
+            updatedCount++;
+          } else if (productTitle || barcode) {
+            // Auto-create new product from Pods
+            const newProd = {
+              id: variantId || `wp-${item.id || Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+              barcode: barcode || `BC-${Date.now().toString().slice(-6)}`,
+              sku: sku || `SKU-${Date.now().toString().slice(-4)}`,
+              brand: brand,
+              varian: variantName !== 'Standard' ? variantName : productTitle,
+              productTitle: productTitle,
+              packageType: variantObj?.variant || 'Kaleng',
+              volume: volume,
+              unitVolume: unitVolume,
+              price: price,
+              stockByStore: {
+                [storeId]: stockVal,
+              },
+              wpStatus: 'publish',
+              lastUpdated: new Date().toISOString(),
+              source: 'wordpress_pods',
+            };
+            db.products.push(newProd);
+            updatedCount++;
           }
         }
+
         db.wpConfig.lastSyncedAt = new Date().toISOString();
         saveDatabase(db);
-        console.log(`[Auto-Sync Checker] Successfully synced ${json.products.length} stock items from WordPress / ESB`);
+        console.log(`[WordPress Pods Sync] Successfully synced/updated ${updatedCount} stock items from WordPress Pods`);
       }
     }
   } catch (err) {

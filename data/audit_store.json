@@ -1,61 +1,21 @@
 {
-  "stores": [
-    {
-      "id": "birmas-kuningan",
-      "name": "Birmas Kuningan",
-      "chillerName": "Chiller #1 (Beverages)",
-      "locationCode": "BIRMAS-KNG",
-      "esbBranchCode": "ESB_KNG"
-    },
-    {
-      "id": "birmas-kwitang",
-      "name": "Birmas Kwitang",
-      "chillerName": "Chiller #1 (Beverages)",
-      "locationCode": "BIRMAS-KWT",
-      "esbBranchCode": "ESB_KWT"
-    },
-    {
-      "id": "birmas-lebak-bulus",
-      "name": "Birmas Lebak Bulus",
-      "chillerName": "Chiller #1 (Beverages)",
-      "locationCode": "BIRMAS-LBB",
-      "esbBranchCode": "ESB_LBB"
-    },
-    {
-      "id": "birmas-sudirman",
-      "name": "Birmas Sudirman",
-      "chillerName": "Chiller #1 (Beverages)",
-      "locationCode": "BIRMAS-SDR",
-      "esbBranchCode": "ESB_SDR"
-    }
-  ],
+  "stores": [],
   "wpConfig": {
     "wpUrl": "https://admin.birmas.id",
     "apiType": "pods",
     "customEndpointPath": "/wp-json/api/v1/product_stocks?per_page=100",
-    "variantEndpointPath": "/wp-json/api/v1/product_variants?per_page=100",
     "consumerKey": "",
     "consumerSecret": "",
     "isConnected": true,
-    "lastSyncedAt": "2026-09-29T04:20:00.000Z",
-    "selectedStoreId": "birmas-sudirman",
+    "lastSyncedAt": "2026-09-29T04:35:00.000Z",
+    "selectedStoreId": "",
     "autoSyncIntervalSeconds": 30
   },
   "products": [],
-  "scannedCountsByStore": {
-    "birmas-kuningan": {},
-    "birmas-kwitang": {},
-    "birmas-lebak-bulus": {},
-    "birmas-sudirman": {}
-  },
+  "scannedCountsByStore": {},
   "scanLogs": [],
   "auditHistory": [],
-  "auditState": {
-    "birmas-kuningan": { "counts": {}, "scanLogs": [] },
-    "birmas-kwitang": { "counts": {}, "scanLogs": [] },
-    "birmas-lebak-bulus": { "counts": {}, "scanLogs": [] },
-    "birmas-sudirman": { "counts": {}, "scanLogs": [] }
-  },
+  "auditState": {},
   "users": [
     {
       "id": "user-admin",
@@ -74,5 +34,5 @@
       "role": "Store Auditor"
     }
   ],
-  "lastSaved": "2026-09-29T04:20:00.000Z"
+  "lastSaved": "2026-09-29T04:35:00.000Z"
 }

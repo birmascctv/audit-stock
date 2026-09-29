@@ -10,35 +10,8 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const DB_FILE = path.join(__dirname, 'data', 'audit_store.json');
 
-// Default Stores (Birmas Kuningan, Kwitang, Lebak Bulus, Sudirman)
-const DEFAULT_STORES = [
-  {
-    id: 'birmas-kuningan',
-    name: 'Birmas Kuningan',
-    locationCode: 'BRM-KNG',
-    esbBranchCode: 'ESB_KNG',
-  },
-  {
-    id: 'birmas-kwitang',
-    name: 'Birmas Kwitang',
-    locationCode: 'BRM-KWT',
-    esbBranchCode: 'ESB_KWT',
-  },
-  {
-    id: 'birmas-lebak-bulus',
-    name: 'Birmas Lebak Bulus',
-    locationCode: 'BRM-LBB',
-    esbBranchCode: 'ESB_LBB',
-  },
-  {
-    id: 'birmas-sudirman',
-    name: 'Birmas Sudirman',
-    locationCode: 'BRM-SDR',
-    esbBranchCode: 'ESB_SDR',
-  },
-];
-
-// Products & Barcodes (Populated dynamically from WordPress Pods & ESB)
+// Stores & Products (Populated dynamically from WordPress Pods)
+const DEFAULT_STORES = [];
 const DEFAULT_WP_PRODUCTS = [];
 
 const DEFAULT_WP_CONFIG = {
@@ -84,15 +57,10 @@ function loadDatabase() {
   ensureDataDirectory();
   if (!fs.existsSync(DB_FILE)) {
     const initialDb = {
-      stores: DEFAULT_STORES,
+      stores: [],
       wpConfig: DEFAULT_WP_CONFIG,
-      products: DEFAULT_WP_PRODUCTS,
-      auditState: {
-        'birmas-kuningan': { counts: {}, scanLogs: [] },
-        'birmas-kwitang': { counts: {}, scanLogs: [] },
-        'birmas-lebak-bulus': { counts: {}, scanLogs: [] },
-        'birmas-sudirman': { counts: {}, scanLogs: [] },
-      },
+      products: [],
+      auditState: {},
       auditHistory: [],
       users: DEFAULT_USERS,
       lastSaved: new Date().toISOString(),
@@ -104,8 +72,8 @@ function loadDatabase() {
   try {
     const raw = fs.readFileSync(DB_FILE, 'utf-8');
     const parsed = JSON.parse(raw);
-    if (!parsed.stores || parsed.stores.length === 0) parsed.stores = DEFAULT_STORES;
-    if (!parsed.products || parsed.products.length === 0) parsed.products = DEFAULT_WP_PRODUCTS;
+    if (!parsed.stores) parsed.stores = [];
+    if (!parsed.products) parsed.products = [];
     if (!parsed.wpConfig || parsed.wpConfig.wpUrl?.includes('demo-store.local') || !parsed.wpConfig.wpUrl) {
       parsed.wpConfig = DEFAULT_WP_CONFIG;
     }
@@ -116,9 +84,9 @@ function loadDatabase() {
   } catch (err) {
     console.error('Error reading DB_FILE, rebuilding defaults:', err);
     return {
-      stores: DEFAULT_STORES,
+      stores: [],
       wpConfig: DEFAULT_WP_CONFIG,
-      products: DEFAULT_WP_PRODUCTS,
+      products: [],
       auditState: {},
       auditHistory: [],
       users: DEFAULT_USERS,
@@ -148,13 +116,16 @@ function extractField(f) {
 async function fetchPodsEndpoint(url, path, headers) {
   const fullUrl = `${url.replace(/\/$/, '')}${path}`;
   try {
-    console.log(`[WordPress Pods Sync] Fetching ${fullUrl} ...`);
-    const res = await fetch(fullUrl, { headers, signal: AbortSignal.timeout(12000) });
+    console.log(`[WordPress Pods Sync] Requesting ${fullUrl} (timeout 60s) ...`);
+    const startTime = Date.now();
+    const res = await fetch(fullUrl, { headers, signal: AbortSignal.timeout(60000) });
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     if (!res.ok) {
-      console.warn(`[WordPress Pods Sync] HTTP ${res.status} from ${fullUrl}`);
+      console.warn(`[WordPress Pods Sync] HTTP ${res.status} from ${fullUrl} (${duration}s)`);
       return null;
     }
     const json = await res.json();
+    console.log(`[WordPress Pods Sync] Response received from ${fullUrl} in ${duration}s!`);
     return Array.isArray(json) ? json : Array.isArray(json.products) ? json.products : Array.isArray(json.data) ? json.data : null;
   } catch (err) {
     console.warn(`[WordPress Pods Sync] Note on ${fullUrl}:`, err.message);
@@ -162,7 +133,7 @@ async function fetchPodsEndpoint(url, path, headers) {
   }
 }
 
-// Background sync runner: syncs product_stocks Pod (which contains variant & stock details)
+// Background sync runner: syncs store locations and product_stocks Pod
 async function runBackgroundWordPressSync(db) {
   const url = db.wpConfig?.wpUrl || 'https://admin.birmas.id';
   if (!url || url.includes('demo-store.local')) return;
@@ -173,54 +144,62 @@ async function runBackgroundWordPressSync(db) {
   };
 
   try {
-    // Fetch Product Stocks Pod (contains both product variant details & stock per location)
+    // 1. Fetch Locations pod if available to populate store list
+    const locationsData = await fetchPodsEndpoint(url, '/wp-json/api/v1/locations?per_page=100', headers)
+      || await fetchPodsEndpoint(url, '/wp-json/api/v1/location?per_page=100', headers)
+      || await fetchPodsEndpoint(url, '/wp-json/api/v1/locations', headers);
+
+    if (locationsData && locationsData.length > 0) {
+      for (const loc of locationsData) {
+        const storeId = loc.post_name || `birmas-${(loc.outlet_code || loc.post_title || 'store').toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+        let existingStore = db.stores.find(s => s.id === storeId || (loc.ID && s.wpId === loc.ID) || s.name.toLowerCase() === (loc.post_title || '').toLowerCase());
+        if (!existingStore) {
+          db.stores.push({
+            id: storeId,
+            wpId: loc.ID,
+            name: loc.post_title || 'Birmas Location',
+            locationCode: loc.outlet_code ? `BRM-${loc.outlet_code.toUpperCase()}` : `BRM-${storeId.slice(-3).toUpperCase()}`,
+            esbBranchCode: loc.branch_code_esb || '',
+          });
+          if (!db.auditState[storeId]) {
+            db.auditState[storeId] = { counts: {}, scanLogs: [] };
+          }
+        }
+      }
+      console.log(`[WordPress Pods Sync] Synchronized ${db.stores.length} store locations from WordPress`);
+    }
+
+    // 2. Fetch Product Stocks Pod (contains both product variant details & stock per location)
     const stocksData = await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks?per_page=100', headers)
-      || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stock?per_page=100', headers)
-      || await fetchPodsEndpoint(url, db.wpConfig.customEndpointPath, headers);
+      || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks?per_page=50', headers)
+      || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks', headers);
 
     if (stocksData && stocksData.length > 0) {
       let updatedCount = 0;
       for (const item of stocksData) {
-        // Resolve Location from Pods
-        let locationRaw = '';
+        // Resolve Location from Pods & auto-register store if not yet in db.stores
+        let targetStore = null;
         if (Array.isArray(item.location) && item.location.length > 0) {
           const locObj = item.location[0];
-          locationRaw = `${locObj.post_title || ''} ${locObj.post_name || ''} ${locObj.branch_code_esb || ''} ${locObj.outlet_code || ''}`.toLowerCase();
-        } else {
-          locationRaw = extractField(item.location || item.meta?.location || item.branch).toLowerCase();
-        }
-
-        // Match store location
-        let targetStore = db.stores.find((s) => {
-          const sName = s.name.toLowerCase();
-          const sId = s.id.toLowerCase();
-          const sCode = s.locationCode.toLowerCase();
-          const sEsb = (s.esbBranchCode || '').toLowerCase();
-          return (
-            locationRaw.includes(sName) ||
-            locationRaw.includes(sId) ||
-            (sCode && locationRaw.includes(sCode)) ||
-            (sEsb && locationRaw.includes(sEsb))
-          );
-        });
-
-        // Auto-create store if location exists but not yet in stores list
-        if (!targetStore && Array.isArray(item.location) && item.location.length > 0) {
-          const locObj = item.location[0];
-          const newStoreId = `birmas-${(locObj.post_name || locObj.post_title || 'branch').toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-          targetStore = {
-            id: newStoreId,
-            name: locObj.post_title || 'Birmas Branch',
-            locationCode: locObj.outlet_code ? `BRM-${locObj.outlet_code.toUpperCase()}` : `BRM-${newStoreId.substring(7, 10).toUpperCase()}`,
-            esbBranchCode: locObj.branch_code_esb || '',
-          };
-          db.stores.push(targetStore);
-          if (!db.auditState[newStoreId]) {
-            db.auditState[newStoreId] = { counts: {}, scanLogs: [] };
+          const storeId = locObj.post_name || `birmas-${(locObj.outlet_code || locObj.post_title || 'branch').toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+          targetStore = db.stores.find((s) => s.id === storeId || (locObj.ID && s.wpId === locObj.ID) || s.name.toLowerCase() === (locObj.post_title || '').toLowerCase());
+          
+          if (!targetStore) {
+            targetStore = {
+              id: storeId,
+              wpId: locObj.ID,
+              name: locObj.post_title || 'Birmas Branch',
+              locationCode: locObj.outlet_code ? `BRM-${locObj.outlet_code.toUpperCase()}` : `BRM-${storeId.slice(-3).toUpperCase()}`,
+              esbBranchCode: locObj.branch_code_esb || '',
+            };
+            db.stores.push(targetStore);
+            if (!db.auditState[storeId]) {
+              db.auditState[storeId] = { counts: {}, scanLogs: [] };
+            }
           }
         }
 
-        const storeId = targetStore ? targetStore.id : (db.wpConfig.selectedStoreId || db.stores[0]?.id || 'birmas-kuningan');
+        const storeId = targetStore ? targetStore.id : (db.stores[0]?.id || db.wpConfig.selectedStoreId || 'birmas-sudirman');
 
         // Resolve Variant & Product Details
         let variantObj = null;
@@ -302,12 +281,16 @@ async function runBackgroundWordPressSync(db) {
         }
       }
 
+      if (db.stores.length > 0 && (!db.wpConfig.selectedStoreId || !db.stores.find(s => s.id === db.wpConfig.selectedStoreId))) {
+        db.wpConfig.selectedStoreId = db.stores[0].id;
+      }
+
       db.wpConfig.lastSyncedAt = new Date().toISOString();
       saveDatabase(db);
-      console.log(`[WordPress Pods Sync] Synced ${stocksData.length} stock items across stores. Saved to DB.`);
+      console.log(`[WordPress Pods Sync] Synced ${stocksData.length} stock items across ${db.stores.length} store locations. Saved to DB.`);
     }
   } catch (err) {
-    console.warn('[WordPress Pods Sync] Periodic note:', err.message);
+    console.warn('[WordPress Pods Sync] Error:', err.message);
   }
 }
 

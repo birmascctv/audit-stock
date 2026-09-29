@@ -7,7 +7,7 @@ import { createServer as createViteServer } from 'vite';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const DB_FILE = path.join(__dirname, 'data', 'audit_store.json');
 
 // Default Stores (Birmas Kuningan, Kwitang, Lebak Bulus, Sudirman)

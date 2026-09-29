@@ -148,16 +148,21 @@ function extractField(f) {
 async function fetchPodsEndpoint(url, path, headers) {
   const fullUrl = `${url.replace(/\/$/, '')}${path}`;
   try {
-    const res = await fetch(fullUrl, { headers });
-    if (!res.ok) return null;
+    console.log(`[WordPress Pods Sync] Fetching ${fullUrl} ...`);
+    const res = await fetch(fullUrl, { headers, signal: AbortSignal.timeout(12000) });
+    if (!res.ok) {
+      console.warn(`[WordPress Pods Sync] HTTP ${res.status} from ${fullUrl}`);
+      return null;
+    }
     const json = await res.json();
     return Array.isArray(json) ? json : Array.isArray(json.products) ? json.products : Array.isArray(json.data) ? json.data : null;
   } catch (err) {
+    console.warn(`[WordPress Pods Sync] Note on ${fullUrl}:`, err.message);
     return null;
   }
 }
 
-// Background sync runner: syncs BOTH product_variant and product_stock Pods
+// Background sync runner: syncs product_stocks Pod (which contains variant & stock details)
 async function runBackgroundWordPressSync(db) {
   const url = db.wpConfig?.wpUrl || 'https://admin.birmas.id';
   if (!url || url.includes('demo-store.local')) return;
@@ -168,51 +173,7 @@ async function runBackgroundWordPressSync(db) {
   };
 
   try {
-    // 1. Fetch Product Variants Pod (product_variants or product_variant)
-    const variantsData = await fetchPodsEndpoint(url, '/wp-json/api/v1/product_variants?per_page=100', headers)
-      || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_variant?per_page=100', headers);
-
-    if (variantsData && variantsData.length > 0) {
-      for (const item of variantsData) {
-        const variantId = `wp-${item.id || item.ID}`;
-        const prodObj = Array.isArray(item.product) && item.product.length > 0 ? item.product[0] : null;
-        const productTitle = prodObj?.post_title || extractField(item.title) || extractField(item.name) || 'Birmas Product';
-        const variantName = extractField(item.variant) || 'Standard';
-        const barcode = extractField(item.barcode || item.meta?.barcode || item.code).trim();
-        const sku = extractField(item.sku || item.meta?.sku).trim();
-        const brand = productTitle.split(' ')[0] || 'Birmas';
-        const price = Number(item.regular_price ?? item.price ?? 0);
-        const volume = Number(item.volume ?? 330);
-        const unitVolume = item.unit_volume ?? 'ml';
-
-        let existing = db.products.find(p => p.id === variantId || (barcode && p.barcode === barcode) || (sku && p.sku === sku));
-        if (existing) {
-          if (barcode && !existing.barcode) existing.barcode = barcode;
-          if (sku && !existing.sku) existing.sku = sku;
-          if (price && !existing.price) existing.price = price;
-          existing.lastUpdated = new Date().toISOString();
-        } else {
-          db.products.push({
-            id: variantId,
-            barcode: barcode || `BC-${item.id || Date.now()}`,
-            sku: sku || `SKU-${item.id || Date.now()}`,
-            brand,
-            varian: variantName !== 'Standard' ? variantName : productTitle,
-            productTitle,
-            packageType: variantName || 'Kaleng',
-            volume,
-            unitVolume,
-            price,
-            stockByStore: {},
-            wpStatus: 'publish',
-            lastUpdated: new Date().toISOString(),
-            source: 'wordpress_pods',
-          });
-        }
-      }
-    }
-
-    // 2. Fetch Product Stocks Pod (product_stocks or product_stock)
+    // Fetch Product Stocks Pod (contains both product variant details & stock per location)
     const stocksData = await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks?per_page=100', headers)
       || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stock?per_page=100', headers)
       || await fetchPodsEndpoint(url, db.wpConfig.customEndpointPath, headers);

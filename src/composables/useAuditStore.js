@@ -1,0 +1,380 @@
+import { ref, computed } from 'vue';
+import {
+  DEFAULT_STORES,
+  DEFAULT_WP_PRODUCTS,
+  fetchStores,
+  fetchWordPressConfig,
+  saveWordPressConfig,
+  fetchProducts,
+  saveNewBarcode,
+  syncWordPressData,
+  fetchAuditState,
+  sendAuditScan,
+  adjustAuditCount,
+  resetAuditSession,
+  finalizeAuditSession,
+  fetchAuditHistory,
+  clearAuditHistory,
+  addStore as apiAddStore,
+  deleteStore as apiDeleteStore,
+} from '../services/wordpressApi.js';
+
+// Global Singleton State
+const stores = ref(DEFAULT_STORES);
+const selectedStoreId = ref('birmas-kuningan');
+const wpConfig = ref({
+  wpUrl: 'https://demo-store.local',
+  apiType: 'woocommerce',
+  customEndpointPath: '/wp-json/birmas/v1/chiller-stocks',
+  consumerKey: '',
+  consumerSecret: '',
+  isConnected: true,
+  lastSyncedAt: new Date().toISOString(),
+  selectedStoreId: 'birmas-kuningan',
+  autoSyncIntervalSeconds: 30,
+});
+
+const wpProducts = ref(DEFAULT_WP_PRODUCTS);
+const scannedCounts = ref({});
+const scanLogs = ref([]);
+const auditHistory = ref([]);
+const isSyncing = ref(false);
+const isInitialized = ref(false);
+const lastCheckedAt = ref(new Date().toLocaleTimeString());
+const isAutoCheckerActive = ref(true);
+
+const lastSyncStatus = ref({
+  success: true,
+  message: 'Connected to Birmas Store Backend Storage',
+});
+
+// Load state from backend
+async function initializeFromBackend() {
+  try {
+    const [loadedStores, loadedConfig, loadedProducts, loadedHistory] = await Promise.all([
+      fetchStores().catch(() => DEFAULT_STORES),
+      fetchWordPressConfig().catch(() => wpConfig.value),
+      fetchProducts().catch(() => DEFAULT_WP_PRODUCTS),
+      fetchAuditHistory().catch(() => []),
+    ]);
+
+    if (loadedStores && loadedStores.length > 0) {
+      stores.value = loadedStores;
+    }
+    if (loadedConfig) {
+      wpConfig.value = { ...wpConfig.value, ...loadedConfig };
+    }
+    if (loadedProducts && loadedProducts.length > 0) {
+      wpProducts.value = loadedProducts;
+    }
+    if (loadedHistory) {
+      auditHistory.value = loadedHistory;
+    }
+
+    await loadStoreScans(selectedStoreId.value);
+    isInitialized.value = true;
+    startBackgroundChecker();
+  } catch (err) {
+    console.warn('Backend init fallback:', err);
+  }
+}
+
+async function loadStoreScans(storeId) {
+  try {
+    const res = await fetchAuditState(storeId);
+    scannedCounts.value = res.counts || res.scannedCounts || {};
+    scanLogs.value = res.scanLogs || [];
+  } catch (err) {
+    console.warn('Failed to load store scans:', err);
+  }
+}
+
+// Background poller: automatically checks backend for any ESB updates or scans every 10 seconds
+let backgroundTimer = null;
+function startBackgroundChecker() {
+  if (backgroundTimer) return;
+  backgroundTimer = setInterval(async () => {
+    if (!isAutoCheckerActive.value || isSyncing.value) return;
+    try {
+      const [latestProducts, latestState] = await Promise.all([
+        fetchProducts().catch(() => null),
+        fetchAuditState(selectedStoreId.value).catch(() => null),
+      ]);
+      if (latestProducts && latestProducts.length > 0) {
+        wpProducts.value = latestProducts;
+      }
+      if (latestState) {
+        scannedCounts.value = latestState.counts || latestState.scannedCounts || {};
+        scanLogs.value = latestState.scanLogs || [];
+      }
+      lastCheckedAt.value = new Date().toLocaleTimeString();
+    } catch (e) {
+      // silently ignore temporary connection lapses
+    }
+  }, 10000);
+}
+
+export function useAuditStore() {
+  if (!isInitialized.value) {
+    initializeFromBackend();
+  }
+
+  const currentStore = computed(() => {
+    return (
+      stores.value.find((s) => s.id === selectedStoreId.value) || stores.value[0]
+    );
+  });
+
+  // Compare Scanned Physical Count with WordPress/ESB Stock for this Store
+  const auditItems = computed(() => {
+    const storeId = selectedStoreId.value;
+
+    return wpProducts.value.map((prod) => {
+      const wpExpected = (prod.stockByStore && prod.stockByStore[storeId]) ?? 0;
+      const count = scannedCounts.value[prod.barcode] ?? 0;
+      const discrepancy = count - wpExpected;
+
+      let status = 'pending';
+      if (count === 0 && wpExpected > 0) {
+        status = 'pending';
+      } else if (count === wpExpected) {
+        status = 'matched';
+      } else if (count < wpExpected) {
+        status = 'missing';
+      } else {
+        status = 'surplus';
+      }
+
+      const lastLog = scanLogs.value.find((l) => l.barcode === prod.barcode);
+
+      return {
+        barcode: prod.barcode,
+        wpId: prod.id,
+        brand: prod.brand,
+        varian: prod.varian,
+        wpExpectedQty: wpExpected,
+        scannedCount: count,
+        discrepancy,
+        status,
+        lastScannedAt: lastLog ? lastLog.timestamp : null,
+      };
+    });
+  });
+
+  // KPI Metrics
+  const totalWpExpected = computed(() => {
+    return auditItems.value.reduce((acc, item) => acc + item.wpExpectedQty, 0);
+  });
+
+  const totalScanned = computed(() => {
+    return auditItems.value.reduce((acc, item) => acc + item.scannedCount, 0);
+  });
+
+  const matchedVariantsCount = computed(() => {
+    return auditItems.value.filter((i) => i.status === 'matched').length;
+  });
+
+  const missingVariantsCount = computed(() => {
+    return auditItems.value.filter((i) => i.status === 'missing').length;
+  });
+
+  const surplusVariantsCount = computed(() => {
+    return auditItems.value.filter((i) => i.status === 'surplus').length;
+  });
+
+  const netDiscrepancyBottles = computed(() => {
+    return totalScanned.value - totalWpExpected.value;
+  });
+
+  async function selectStore(storeId) {
+    selectedStoreId.value = storeId;
+    await loadStoreScans(storeId);
+  }
+
+  // Register physical scan
+  async function registerAuditScan(barcode, auditorName = 'Auditor') {
+    const clean = (barcode || '').trim();
+
+    const res = await sendAuditScan(clean, selectedStoreId.value, auditorName);
+
+    if (res.success && res.scannedCount !== undefined) {
+      scannedCounts.value[clean] = res.scannedCount;
+
+      const scanEvent = {
+        id: `scan-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        barcode: clean,
+        brand: res.product?.brand || 'Birmas',
+        varian: res.product?.varian || 'Product',
+        scanSequence: res.scannedCount,
+        storeId: selectedStoreId.value,
+        auditorName,
+      };
+      scanLogs.value.unshift(scanEvent);
+
+      const currentItem = auditItems.value.find((i) => i.barcode === clean);
+
+      return {
+        success: true,
+        message: res.message,
+        item: currentItem,
+        isOvercount: res.discrepancy > 0,
+        isMatchedNow: res.discrepancy === 0,
+      };
+    } else {
+      return {
+        success: false,
+        message: res.message || `Barcode ${clean} not found in database.`,
+        unknownBarcode: clean,
+      };
+    }
+  }
+
+  async function decrementAuditCount(barcode) {
+    const clean = (barcode || '').trim();
+    const cur = scannedCounts.value[clean] ?? 0;
+    if (cur > 0) {
+      scannedCounts.value[clean] = cur - 1;
+      await adjustAuditCount(clean, selectedStoreId.value, { delta: -1 });
+    }
+  }
+
+  async function setAuditCount(barcode, count) {
+    const clean = (barcode || '').trim();
+    const safeCount = Math.max(0, count);
+    scannedCounts.value[clean] = safeCount;
+    await adjustAuditCount(clean, selectedStoreId.value, { count: safeCount });
+  }
+
+  async function resetCurrentAudit() {
+    scannedCounts.value = {};
+    scanLogs.value = [];
+    await resetAuditSession(selectedStoreId.value);
+  }
+
+  async function addNewBarcode(payload) {
+    const res = await saveNewBarcode(payload);
+    if (res.success && res.product) {
+      const idx = wpProducts.value.findIndex(
+        (p) => p.barcode.toLowerCase() === res.product.barcode.toLowerCase()
+      );
+      if (idx >= 0) {
+        wpProducts.value[idx] = res.product;
+      } else {
+        wpProducts.value.push(res.product);
+      }
+    }
+    return res;
+  }
+
+  async function syncFromWordPress() {
+    isSyncing.value = true;
+    try {
+      await saveWordPressConfig(wpConfig.value);
+      const res = await syncWordPressData(wpConfig.value);
+      if (res.data && res.data.length > 0) {
+        wpProducts.value = res.data;
+        wpConfig.value.isConnected = true;
+        wpConfig.value.lastSyncedAt = new Date().toISOString();
+        lastSyncStatus.value = { success: res.success, message: res.message };
+      } else {
+        lastSyncStatus.value = { success: false, message: res.message };
+      }
+    } catch (err) {
+      lastSyncStatus.value = { success: false, message: err.message };
+    } finally {
+      isSyncing.value = false;
+    }
+  }
+
+  async function finalizeAudit(auditorName, notes = '', pushToWP = false) {
+    const completedRecord = {
+      id: `audit-${Date.now()}`,
+      storeId: selectedStoreId.value,
+      storeName: currentStore.value.name,
+      auditorName,
+      startedAt: scanLogs.value.length > 0 ? scanLogs.value[scanLogs.value.length - 1].timestamp : new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      totalExpected: totalWpExpected.value,
+      totalScanned: totalScanned.value,
+      matchedCount: matchedVariantsCount.value,
+      missingCount: missingVariantsCount.value,
+      surplusCount: surplusVariantsCount.value,
+      items: auditItems.value,
+      pushedToWordPress: pushToWP,
+      notes,
+    };
+
+    const res = await finalizeAuditSession(completedRecord);
+
+    if (res.success) {
+      auditHistory.value.unshift(completedRecord);
+      scannedCounts.value = {};
+      scanLogs.value = [];
+
+      if (pushToWP) {
+        const refreshed = await fetchProducts();
+        if (refreshed) wpProducts.value = refreshed;
+      }
+
+      return completedRecord;
+    } else {
+      throw new Error(res.message || 'Failed to finalize audit on backend');
+    }
+  }
+
+  async function clearHistory() {
+    await clearAuditHistory();
+    auditHistory.value = [];
+  }
+
+  async function createStore(storeData) {
+    const res = await apiAddStore(storeData);
+    if (res.success && res.stores) {
+      stores.value = res.stores;
+    }
+    return res;
+  }
+
+  async function removeStore(storeId) {
+    const res = await apiDeleteStore(storeId);
+    if (res.success && res.stores) {
+      stores.value = res.stores;
+    }
+    return res;
+  }
+
+  return {
+    stores,
+    selectedStoreId,
+    currentStore,
+    wpConfig,
+    wpProducts,
+    auditItems,
+    scannedCounts,
+    scanLogs,
+    auditHistory,
+    isSyncing,
+    lastSyncStatus,
+    totalWpExpected,
+    totalScanned,
+    matchedVariantsCount,
+    missingVariantsCount,
+    surplusVariantsCount,
+    netDiscrepancyBottles,
+    isAutoCheckerActive,
+    lastCheckedAt,
+    selectStore,
+    registerAuditScan,
+    decrementAuditCount,
+    setAuditCount,
+    resetCurrentAudit,
+    addNewBarcode,
+    syncFromWordPress,
+    finalizeAudit,
+    clearHistory,
+    createStore,
+    removeStore,
+    refreshAuditState: () => loadStoreScans(selectedStoreId.value),
+  };
+}

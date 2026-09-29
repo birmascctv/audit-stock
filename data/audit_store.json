@@ -1,0 +1,230 @@
+{
+  "stores": [
+    {
+      "id": "birmas-kuningan",
+      "name": "Birmas Kuningan",
+      "chillerName": "Chiller #1 (Beverages)",
+      "locationCode": "BIRMAS-KNG",
+      "esbBranchCode": "ESB_KNG"
+    },
+    {
+      "id": "birmas-kwitang",
+      "name": "Birmas Kwitang",
+      "chillerName": "Chiller #1 (Beverages)",
+      "locationCode": "BIRMAS-KWT",
+      "esbBranchCode": "ESB_KWT"
+    },
+    {
+      "id": "birmas-lebak-bulus",
+      "name": "Birmas Lebak Bulus",
+      "chillerName": "Chiller #1 (Beverages)",
+      "locationCode": "BIRMAS-LBB",
+      "esbBranchCode": "ESB_LBB"
+    },
+    {
+      "id": "birmas-sudirman",
+      "name": "Birmas Sudirman",
+      "chillerName": "Chiller #1 (Beverages)",
+      "locationCode": "BIRMAS-SDR",
+      "esbBranchCode": "ESB_SDR"
+    }
+  ],
+  "wpConfig": {
+    "wpUrl": "https://demo-store.local",
+    "apiType": "woocommerce",
+    "customEndpointPath": "/wp-json/esb/v1/stock",
+    "consumerKey": "",
+    "consumerSecret": "",
+    "isConnected": true,
+    "lastSyncedAt": "2026-09-28T10:47:38.156Z",
+    "selectedStoreId": "birmas-kuningan"
+  },
+  "products": [
+    {
+      "id": "wp-101",
+      "barcode": "8997026800122",
+      "sku": "KULT-LYC-24",
+      "brand": "Kulturale",
+      "varian": "Lychee",
+      "price": 35000,
+      "stockByStore": {
+        "birmas-kuningan": 24,
+        "birmas-kwitang": 24,
+        "birmas-lebak-bulus": 20,
+        "birmas-sudirman": 24
+      },
+      "wpStatus": "publish",
+      "lastUpdated": "2026-09-28T10:47:38.156Z",
+      "source": "wordpress"
+    },
+    {
+      "id": "wp-102",
+      "barcode": "8997026800030",
+      "sku": "KULT-MNG-24",
+      "brand": "Kulturale",
+      "varian": "Mango",
+      "price": 35000,
+      "stockByStore": {
+        "birmas-kuningan": 24,
+        "birmas-kwitang": 18,
+        "birmas-lebak-bulus": 24,
+        "birmas-sudirman": 20
+      },
+      "wpStatus": "publish",
+      "lastUpdated": "2026-09-28T10:47:38.156Z",
+      "source": "wordpress"
+    },
+    {
+      "id": "wp-103",
+      "barcode": "8997026800078",
+      "sku": "KULT-APP-24",
+      "brand": "Kulturale",
+      "varian": "Apple",
+      "price": 35000,
+      "stockByStore": {
+        "birmas-kuningan": 24,
+        "birmas-kwitang": 24,
+        "birmas-lebak-bulus": 16,
+        "birmas-sudirman": 24
+      },
+      "wpStatus": "publish",
+      "lastUpdated": "2026-09-28T10:47:38.156Z",
+      "source": "wordpress"
+    },
+    {
+      "id": "wp-104",
+      "barcode": "8997026800016",
+      "sku": "KULT-ORI-24",
+      "brand": "Kulturale",
+      "varian": "Original",
+      "price": 35000,
+      "stockByStore": {
+        "birmas-kuningan": 24,
+        "birmas-kwitang": 20,
+        "birmas-lebak-bulus": 24,
+        "birmas-sudirman": 18
+      },
+      "wpStatus": "publish",
+      "lastUpdated": "2026-09-28T10:47:38.156Z",
+      "source": "wordpress"
+    },
+    {
+      "id": "wp-105",
+      "barcode": "8993156000074",
+      "sku": "ALB-STOUT-20",
+      "brand": "Albens",
+      "varian": "LL Stout",
+      "price": 45000,
+      "stockByStore": {
+        "birmas-kuningan": 20,
+        "birmas-kwitang": 15,
+        "birmas-lebak-bulus": 20,
+        "birmas-sudirman": 20
+      },
+      "wpStatus": "publish",
+      "lastUpdated": "2026-09-28T10:47:38.156Z",
+      "source": "wordpress"
+    },
+    {
+      "id": "wp-106",
+      "barcode": "8993156668267",
+      "sku": "ALB-AMAR-20",
+      "brand": "Albens",
+      "varian": "Amarillo",
+      "price": 45000,
+      "stockByStore": {
+        "birmas-kuningan": 20,
+        "birmas-kwitang": 20,
+        "birmas-lebak-bulus": 14,
+        "birmas-sudirman": 20
+      },
+      "wpStatus": "publish",
+      "lastUpdated": "2026-09-28T10:47:38.156Z",
+      "source": "wordpress"
+    },
+    {
+      "id": "wp-107",
+      "barcode": "8993156668229",
+      "sku": "ALB-NAGA-20",
+      "brand": "Albens",
+      "varian": "Naganini",
+      "price": 45000,
+      "stockByStore": {
+        "birmas-kuningan": 20,
+        "birmas-kwitang": 16,
+        "birmas-lebak-bulus": 20,
+        "birmas-sudirman": 18
+      },
+      "wpStatus": "publish",
+      "lastUpdated": "2026-09-28T10:47:38.156Z",
+      "source": "wordpress"
+    },
+    {
+      "id": "wp-108",
+      "barcode": "8997026800999",
+      "sku": "SKU-800999",
+      "brand": "Kulturale",
+      "varian": "Peach Cider",
+      "price": 35000,
+      "stockByStore": {
+        "birmas-kuningan": 24,
+        "birmas-kwitang": 24,
+        "birmas-lebak-bulus": 20,
+        "birmas-sudirman": 24
+      },
+      "wpStatus": "publish",
+      "lastUpdated": "2026-09-28T10:47:45.275Z",
+      "source": "manual"
+    },
+    {
+      "id": "12880",
+      "barcode": "8993156000088",
+      "sku": "SKU-000088",
+      "brand": "Guinness",
+      "varian": "Draught In Can",
+      "productTitle": "Guinness Draught In Can 440ml",
+      "packageType": "Kaleng",
+      "volume": 440,
+      "unitVolume": "ml",
+      "price": 58000,
+      "stockByStore": {
+        "birmas-kuningan": 24,
+        "birmas-kwitang": 24,
+        "birmas-lebak-bulus": 18,
+        "birmas-sudirman": 24
+      },
+      "wpStatus": "publish",
+      "lastUpdated": "2026-09-28T11:35:24.206Z",
+      "source": "manual"
+    }
+  ],
+  "scannedCountsByStore": {
+    "birmas-kuningan": {},
+    "birmas-kwitang": {},
+    "birmas-lebak-bulus": {},
+    "birmas-sudirman": {}
+  },
+  "scanLogs": [
+    {
+      "id": "scan-1790595328947-c3o8",
+      "timestamp": "2026-09-28T11:35:28.947Z",
+      "barcode": "8993156000088",
+      "brand": "Guinness",
+      "varian": "Draught In Can",
+      "scanSequence": 1,
+      "storeId": "birmas-kuningan",
+      "auditorName": "Bertha Evania"
+    },
+    {
+      "id": "scan-1790592473668-4v4l",
+      "timestamp": "2026-09-28T10:47:53.668Z",
+      "barcode": "8997026800999",
+      "brand": "Kulturale",
+      "varian": "Peach Cider",
+      "scanSequence": 1,
+      "storeId": "birmas-kuningan",
+      "auditorName": "Bertha Evania"
+    }
+  ],
+  "auditHistory": []
+}

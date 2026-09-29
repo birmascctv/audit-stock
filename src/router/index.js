@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import AuditView from '../views/AuditView.vue';
-import WordPressView from '../views/WordPressView.vue';
 import AuditHistoryView from '../views/AuditHistoryView.vue';
 import LoginView from '../views/LoginView.vue';
 
@@ -16,8 +15,7 @@ const routes = [
   },
   {
     path: '/wordpress',
-    name: 'WordPress',
-    component: WordPressView,
+    redirect: '/audit',
   },
   {
     path: '/history',

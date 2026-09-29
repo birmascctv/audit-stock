@@ -40,10 +40,6 @@ const isGuideOpen = ref(false);
           <button @click="isGuideOpen = true" class="text-teal-700 hover:underline font-medium">
             Scanner Tips (EN / ID)
           </button>
-          <span>•</span>
-          <router-link to="/wordpress" class="text-slate-600 hover:text-teal-700">
-            WordPress & ESB Pods Setup
-          </router-link>
         </div>
       </div>
     </footer>

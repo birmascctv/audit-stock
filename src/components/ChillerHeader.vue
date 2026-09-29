@@ -96,19 +96,6 @@ onUnmounted(() => {
             </router-link>
 
             <router-link
-              to="/wordpress"
-              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-              :class="
-                route.path === '/wordpress'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
-              "
-            >
-              <Globe class="w-3.5 h-3.5" />
-              <span>WordPress / ESB</span>
-            </router-link>
-
-            <router-link
               to="/history"
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
               :class="

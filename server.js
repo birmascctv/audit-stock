@@ -38,224 +38,14 @@ const DEFAULT_STORES = [
   },
 ];
 
-// Default Products & Barcodes (Synchronized with WordPress Pods & ESB)
-const DEFAULT_WP_PRODUCTS = [
-  {
-    id: 'wp-101',
-    barcode: '8997026800122',
-    sku: 'KULT-LYC-24',
-    brand: 'Kulturale',
-    varian: 'Lychee',
-    productTitle: 'Kulturale Lychee Kaleng 330ml',
-    packageType: 'Kaleng',
-    volume: 330,
-    unitVolume: 'ml',
-    price: 35000,
-    stockByStore: {
-      'birmas-kuningan': 24,
-      'birmas-kwitang': 24,
-      'birmas-lebak-bulus': 20,
-      'birmas-sudirman': 24,
-    },
-    wpStatus: 'publish',
-    lastUpdated: new Date().toISOString(),
-    source: 'wordpress',
-  },
-  {
-    id: 'wp-102',
-    barcode: '8997026800030',
-    sku: 'KULT-MNG-24',
-    brand: 'Kulturale',
-    varian: 'Mango',
-    productTitle: 'Kulturale Mango Kaleng 330ml',
-    packageType: 'Kaleng',
-    volume: 330,
-    unitVolume: 'ml',
-    price: 35000,
-    stockByStore: {
-      'birmas-kuningan': 24,
-      'birmas-kwitang': 18,
-      'birmas-lebak-bulus': 24,
-      'birmas-sudirman': 20,
-    },
-    wpStatus: 'publish',
-    lastUpdated: new Date().toISOString(),
-    source: 'wordpress',
-  },
-  {
-    id: 'wp-103',
-    barcode: '8997026800078',
-    sku: 'KULT-APL-24',
-    brand: 'Kulturale',
-    varian: 'Apple',
-    productTitle: 'Kulturale Apple Kaleng 330ml',
-    packageType: 'Kaleng',
-    volume: 330,
-    unitVolume: 'ml',
-    price: 35000,
-    stockByStore: {
-      'birmas-kuningan': 24,
-      'birmas-kwitang': 24,
-      'birmas-lebak-bulus': 24,
-      'birmas-sudirman': 24,
-    },
-    wpStatus: 'publish',
-    lastUpdated: new Date().toISOString(),
-    source: 'wordpress',
-  },
-  {
-    id: 'wp-104',
-    barcode: '8997026800016',
-    sku: 'KULT-ORI-24',
-    brand: 'Kulturale',
-    varian: 'Original',
-    productTitle: 'Kulturale Original Kaleng 330ml',
-    packageType: 'Kaleng',
-    volume: 330,
-    unitVolume: 'ml',
-    price: 35000,
-    stockByStore: {
-      'birmas-kuningan': 24,
-      'birmas-kwitang': 22,
-      'birmas-lebak-bulus': 24,
-      'birmas-sudirman': 24,
-    },
-    wpStatus: 'publish',
-    lastUpdated: new Date().toISOString(),
-    source: 'wordpress',
-  },
-  {
-    id: 'wp-105',
-    barcode: '8993156000074',
-    sku: 'ALB-STO-20',
-    brand: 'Albens',
-    varian: 'LL Stout',
-    productTitle: 'Albens LL Stout Kaleng 330ml',
-    packageType: 'Kaleng',
-    volume: 330,
-    unitVolume: 'ml',
-    price: 45000,
-    stockByStore: {
-      'birmas-kuningan': 20,
-      'birmas-kwitang': 20,
-      'birmas-lebak-bulus': 16,
-      'birmas-sudirman': 20,
-    },
-    wpStatus: 'publish',
-    lastUpdated: new Date().toISOString(),
-    source: 'wordpress',
-  },
-  {
-    id: 'wp-106',
-    barcode: '8993156668267',
-    sku: 'ALB-AMA-20',
-    brand: 'Albens',
-    varian: 'Amarillo',
-    productTitle: 'Albens Amarillo Kaleng 330ml',
-    packageType: 'Kaleng',
-    volume: 330,
-    unitVolume: 'ml',
-    price: 45000,
-    stockByStore: {
-      'birmas-kuningan': 20,
-      'birmas-kwitang': 20,
-      'birmas-lebak-bulus': 20,
-      'birmas-sudirman': 18,
-    },
-    wpStatus: 'publish',
-    lastUpdated: new Date().toISOString(),
-    source: 'wordpress',
-  },
-  {
-    id: 'wp-107',
-    barcode: '8993156668229',
-    sku: 'ALB-NAG-20',
-    brand: 'Albens',
-    varian: 'Naganini',
-    productTitle: 'Albens Naganini Kaleng 330ml',
-    packageType: 'Kaleng',
-    volume: 330,
-    unitVolume: 'ml',
-    price: 45000,
-    stockByStore: {
-      'birmas-kuningan': 20,
-      'birmas-kwitang': 19,
-      'birmas-lebak-bulus': 20,
-      'birmas-sudirman': 20,
-    },
-    wpStatus: 'publish',
-    lastUpdated: new Date().toISOString(),
-    source: 'wordpress',
-  },
-  {
-    id: 'wp-12880',
-    barcode: '5000213007624',
-    sku: 'GUI-CAN-440',
-    brand: 'Guinness',
-    varian: 'Draught In Can',
-    productTitle: 'Guinness Draught In Can 440ml',
-    packageType: 'Kaleng',
-    volume: 440,
-    unitVolume: 'ml',
-    price: 58000,
-    stockByStore: {
-      'birmas-kuningan': 24,
-      'birmas-kwitang': 24,
-      'birmas-lebak-bulus': 18,
-      'birmas-sudirman': 24,
-    },
-    wpStatus: 'publish',
-    lastUpdated: new Date().toISOString(),
-    source: 'wordpress',
-  },
-  {
-    id: 'wp-12877',
-    barcode: '8801048951112',
-    sku: 'CHAM-LYC-360',
-    brand: 'Cham Joeun',
-    varian: 'Lychee',
-    productTitle: 'Cham Joeun Lychee Botol 360ml',
-    packageType: 'Botol',
-    volume: 360,
-    unitVolume: 'ml',
-    price: 104000,
-    stockByStore: {
-      'birmas-kuningan': 12,
-      'birmas-kwitang': 12,
-      'birmas-lebak-bulus': 12,
-      'birmas-sudirman': 12,
-    },
-    wpStatus: 'publish',
-    lastUpdated: new Date().toISOString(),
-    source: 'wordpress',
-  },
-  {
-    id: 'wp-12882',
-    barcode: '8998888001011',
-    sku: 'OT-AO-620',
-    brand: 'Orang Tua',
-    varian: 'AO',
-    productTitle: 'Orang Tua AO Botol 620ml',
-    packageType: 'Botol',
-    volume: 620,
-    unitVolume: 'ml',
-    price: 65000,
-    stockByStore: {
-      'birmas-kuningan': 15,
-      'birmas-kwitang': 15,
-      'birmas-lebak-bulus': 10,
-      'birmas-sudirman': 15,
-    },
-    wpStatus: 'publish',
-    lastUpdated: new Date().toISOString(),
-    source: 'wordpress',
-  },
-];
+// Products & Barcodes (Populated dynamically from WordPress Pods & ESB)
+const DEFAULT_WP_PRODUCTS = [];
 
 const DEFAULT_WP_CONFIG = {
-  wpUrl: 'https://demo-store.local',
-  apiType: 'woocommerce',
-  customEndpointPath: '/wp-json/birmas/v1/chiller-stocks',
+  wpUrl: 'https://admin.birmas.id',
+  apiType: 'pods',
+  customEndpointPath: '/wp-json/api/v1/product_stocks?per_page=100',
+  variantEndpointPath: '/wp-json/api/v1/product_variants?per_page=100',
   consumerKey: '',
   consumerSecret: '',
   isConnected: true,
@@ -316,7 +106,9 @@ function loadDatabase() {
     const parsed = JSON.parse(raw);
     if (!parsed.stores || parsed.stores.length === 0) parsed.stores = DEFAULT_STORES;
     if (!parsed.products || parsed.products.length === 0) parsed.products = DEFAULT_WP_PRODUCTS;
-    if (!parsed.wpConfig) parsed.wpConfig = DEFAULT_WP_CONFIG;
+    if (!parsed.wpConfig || parsed.wpConfig.wpUrl?.includes('demo-store.local') || !parsed.wpConfig.wpUrl) {
+      parsed.wpConfig = DEFAULT_WP_CONFIG;
+    }
     if (!parsed.auditState) parsed.auditState = {};
     if (!parsed.auditHistory) parsed.auditHistory = [];
     if (!parsed.users || parsed.users.length === 0) parsed.users = DEFAULT_USERS;
@@ -345,170 +137,216 @@ function saveDatabase(db) {
   }
 }
 
-// Background sync runner
+// Helper to extract string or value from Pods field
+function extractField(f) {
+  if (f === null || f === undefined) return '';
+  if (Array.isArray(f) && f.length > 0) return extractField(f[0]);
+  if (typeof f === 'object') return (f.value ?? f.rendered ?? f.post_title ?? f.name ?? f.slug ?? '').toString();
+  return f.toString();
+}
+
+async function fetchPodsEndpoint(url, path, headers) {
+  const fullUrl = `${url.replace(/\/$/, '')}${path}`;
+  try {
+    const res = await fetch(fullUrl, { headers });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return Array.isArray(json) ? json : Array.isArray(json.products) ? json.products : Array.isArray(json.data) ? json.data : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// Background sync runner: syncs BOTH product_variant and product_stock Pods
 async function runBackgroundWordPressSync(db) {
-  const url = db.wpConfig?.wpUrl;
+  const url = db.wpConfig?.wpUrl || 'https://admin.birmas.id';
   if (!url || url.includes('demo-store.local')) return;
 
-  const endpoint = `${url.replace(/\/$/, '')}${db.wpConfig.customEndpointPath || '/wp-json/birmas/v1/chiller-stocks'}`;
+  const headers = {
+    'Accept': 'application/json',
+    ...(db.wpConfig.appPassword ? { 'Authorization': `Basic ${Buffer.from(db.wpConfig.appPassword).toString('base64')}` } : {}),
+  };
+
   try {
-    const response = await fetch(endpoint, {
-      headers: {
-        'Accept': 'application/json',
-        ...(db.wpConfig.appPassword ? { 'Authorization': `Basic ${Buffer.from(db.wpConfig.appPassword).toString('base64')}` } : {}),
-      },
-    });
+    // 1. Fetch Product Variants Pod (product_variants or product_variant)
+    const variantsData = await fetchPodsEndpoint(url, '/wp-json/api/v1/product_variants?per_page=100', headers)
+      || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_variant?per_page=100', headers);
 
-    if (response.ok) {
-      const json = await response.json();
-      const rawItems = Array.isArray(json)
-        ? json
-        : Array.isArray(json.products)
-        ? json.products
-        : Array.isArray(json.data)
-        ? json.data
-        : [];
+    if (variantsData && variantsData.length > 0) {
+      for (const item of variantsData) {
+        const variantId = `wp-${item.id || item.ID}`;
+        const prodObj = Array.isArray(item.product) && item.product.length > 0 ? item.product[0] : null;
+        const productTitle = prodObj?.post_title || extractField(item.title) || extractField(item.name) || 'Birmas Product';
+        const variantName = extractField(item.variant) || 'Standard';
+        const barcode = extractField(item.barcode || item.meta?.barcode || item.code).trim();
+        const sku = extractField(item.sku || item.meta?.sku).trim();
+        const brand = productTitle.split(' ')[0] || 'Birmas';
+        const price = Number(item.regular_price ?? item.price ?? 0);
+        const volume = Number(item.volume ?? 330);
+        const unitVolume = item.unit_volume ?? 'ml';
 
-      if (rawItems.length > 0) {
-        let updatedCount = 0;
-        for (const item of rawItems) {
-          // Helper to extract string or value from Pods field
-          const extractField = (f) => {
-            if (f === null || f === undefined) return '';
-            if (Array.isArray(f) && f.length > 0) return extractField(f[0]);
-            if (typeof f === 'object') return (f.value ?? f.rendered ?? f.post_title ?? f.name ?? f.slug ?? '').toString();
-            return f.toString();
-          };
-
-          // 1. Resolve Location from Pods (supports location array with post_title, post_name, branch_code_esb, outlet_code)
-          let locationRaw = '';
-          if (Array.isArray(item.location) && item.location.length > 0) {
-            const locObj = item.location[0];
-            locationRaw = `${locObj.post_title || ''} ${locObj.post_name || ''} ${locObj.branch_code_esb || ''} ${locObj.outlet_code || ''}`.toLowerCase();
-          } else {
-            locationRaw = extractField(item.location || item.meta?.location || item.branch).toLowerCase();
-          }
-
-          // Match store location
-          let targetStore = db.stores.find((s) => {
-            const sName = s.name.toLowerCase();
-            const sId = s.id.toLowerCase();
-            const sCode = s.locationCode.toLowerCase();
-            const sEsb = (s.esbBranchCode || '').toLowerCase();
-            return (
-              locationRaw.includes(sName) ||
-              locationRaw.includes(sId) ||
-              (sCode && locationRaw.includes(sCode)) ||
-              (sEsb && locationRaw.includes(sEsb))
-            );
+        let existing = db.products.find(p => p.id === variantId || (barcode && p.barcode === barcode) || (sku && p.sku === sku));
+        if (existing) {
+          if (barcode && !existing.barcode) existing.barcode = barcode;
+          if (sku && !existing.sku) existing.sku = sku;
+          if (price && !existing.price) existing.price = price;
+          existing.lastUpdated = new Date().toISOString();
+        } else {
+          db.products.push({
+            id: variantId,
+            barcode: barcode || `BC-${item.id || Date.now()}`,
+            sku: sku || `SKU-${item.id || Date.now()}`,
+            brand,
+            varian: variantName !== 'Standard' ? variantName : productTitle,
+            productTitle,
+            packageType: variantName || 'Kaleng',
+            volume,
+            unitVolume,
+            price,
+            stockByStore: {},
+            wpStatus: 'publish',
+            lastUpdated: new Date().toISOString(),
+            source: 'wordpress_pods',
           });
+        }
+      }
+    }
 
-          // Auto-create store if location object exists but not matched yet
-          if (!targetStore && Array.isArray(item.location) && item.location.length > 0) {
-            const locObj = item.location[0];
-            const newStoreId = `birmas-${(locObj.post_name || locObj.post_title || 'branch').toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-            targetStore = {
-              id: newStoreId,
-              name: locObj.post_title || 'Birmas Branch',
-              locationCode: locObj.outlet_code ? `BRM-${locObj.outlet_code.toUpperCase()}` : `BRM-${newStoreId.substring(7, 10).toUpperCase()}`,
-              esbBranchCode: locObj.branch_code_esb || '',
-            };
-            db.stores.push(targetStore);
-            if (!db.auditState[newStoreId]) {
-              db.auditState[newStoreId] = { counts: {}, scanLogs: [] };
-            }
-          }
+    // 2. Fetch Product Stocks Pod (product_stocks or product_stock)
+    const stocksData = await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks?per_page=100', headers)
+      || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stock?per_page=100', headers)
+      || await fetchPodsEndpoint(url, db.wpConfig.customEndpointPath, headers);
 
-          const storeId = targetStore ? targetStore.id : (db.wpConfig.selectedStoreId || db.stores[0]?.id || 'birmas-kuningan');
+    if (stocksData && stocksData.length > 0) {
+      let updatedCount = 0;
+      for (const item of stocksData) {
+        // Resolve Location from Pods
+        let locationRaw = '';
+        if (Array.isArray(item.location) && item.location.length > 0) {
+          const locObj = item.location[0];
+          locationRaw = `${locObj.post_title || ''} ${locObj.post_name || ''} ${locObj.branch_code_esb || ''} ${locObj.outlet_code || ''}`.toLowerCase();
+        } else {
+          locationRaw = extractField(item.location || item.meta?.location || item.branch).toLowerCase();
+        }
 
-          // 2. Resolve Variant & Product Details
-          let variantObj = null;
-          let productObj = null;
-          if (Array.isArray(item.product_variant) && item.product_variant.length > 0) {
-            variantObj = item.product_variant[0];
-            if (Array.isArray(variantObj.product) && variantObj.product.length > 0) {
-              productObj = variantObj.product[0];
-            }
-          }
+        // Match store location
+        let targetStore = db.stores.find((s) => {
+          const sName = s.name.toLowerCase();
+          const sId = s.id.toLowerCase();
+          const sCode = s.locationCode.toLowerCase();
+          const sEsb = (s.esbBranchCode || '').toLowerCase();
+          return (
+            locationRaw.includes(sName) ||
+            locationRaw.includes(sId) ||
+            (sCode && locationRaw.includes(sCode)) ||
+            (sEsb && locationRaw.includes(sEsb))
+          );
+        });
 
-          const variantId = variantObj?.ID ? `wp-${variantObj.ID}` : (item.id ? `wp-${item.id}` : '');
-          const productTitle = productObj?.post_title || extractField(item.product_variant_title) || extractField(item.variant_title) || extractField(item.title) || 'Birmas Product';
-          const variantName = variantObj?.variant || extractField(item.variant) || 'Standard';
-          const barcode = extractField(item.barcode || variantObj?.barcode || item.meta?.barcode || item.code).trim();
-          const sku = extractField(item.sku || variantObj?.sku || item.meta?.sku).trim();
-          const brand = productTitle.split(' ')[0] || extractField(item.brand) || 'Birmas';
-          const price = Number(variantObj?.regular_price ?? item.regular_price ?? item.price ?? 0);
-          const volume = Number(variantObj?.volume ?? item.volume ?? 330);
-          const unitVolume = variantObj?.unit_volume ?? item.unit_volume ?? 'ml';
-
-          // 3. Resolve Stock
-          let stockVal = 0;
-          if (typeof item.stock === 'object' && item.stock !== null) {
-            stockVal = Number(item.stock.value ?? item.stock.rendered ?? 0);
-          } else {
-            stockVal = Number(item.stock ?? item.stock_qty ?? item.quantity ?? item.qty ?? item.meta?.stock ?? 0);
-          }
-
-          // 4. Find existing product by ID, barcode, SKU, or Title
-          let existing = null;
-          if (variantId) {
-            existing = db.products.find((p) => p.id === variantId);
-          }
-          if (!existing && barcode) {
-            existing = db.products.find((p) => p.barcode === barcode);
-          }
-          if (!existing && sku) {
-            existing = db.products.find((p) => p.sku === sku);
-          }
-          if (!existing && productTitle) {
-            const tLower = productTitle.toLowerCase();
-            existing = db.products.find((p) =>
-              p.productTitle.toLowerCase() === tLower ||
-              tLower.includes(p.varian.toLowerCase()) ||
-              p.productTitle.toLowerCase().includes(tLower)
-            );
-          }
-
-          if (existing) {
-            if (!existing.stockByStore) existing.stockByStore = {};
-            existing.stockByStore[storeId] = stockVal;
-            if (barcode && !existing.barcode) existing.barcode = barcode;
-            if (sku && !existing.sku) existing.sku = sku;
-            if (price && !existing.price) existing.price = price;
-            existing.lastUpdated = new Date().toISOString();
-            updatedCount++;
-          } else if (productTitle || barcode) {
-            // Auto-create new product from Pods
-            const newProd = {
-              id: variantId || `wp-${item.id || Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-              barcode: barcode || `BC-${Date.now().toString().slice(-6)}`,
-              sku: sku || `SKU-${Date.now().toString().slice(-4)}`,
-              brand: brand,
-              varian: variantName !== 'Standard' ? variantName : productTitle,
-              productTitle: productTitle,
-              packageType: variantObj?.variant || 'Kaleng',
-              volume: volume,
-              unitVolume: unitVolume,
-              price: price,
-              stockByStore: {
-                [storeId]: stockVal,
-              },
-              wpStatus: 'publish',
-              lastUpdated: new Date().toISOString(),
-              source: 'wordpress_pods',
-            };
-            db.products.push(newProd);
-            updatedCount++;
+        // Auto-create store if location exists but not yet in stores list
+        if (!targetStore && Array.isArray(item.location) && item.location.length > 0) {
+          const locObj = item.location[0];
+          const newStoreId = `birmas-${(locObj.post_name || locObj.post_title || 'branch').toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+          targetStore = {
+            id: newStoreId,
+            name: locObj.post_title || 'Birmas Branch',
+            locationCode: locObj.outlet_code ? `BRM-${locObj.outlet_code.toUpperCase()}` : `BRM-${newStoreId.substring(7, 10).toUpperCase()}`,
+            esbBranchCode: locObj.branch_code_esb || '',
+          };
+          db.stores.push(targetStore);
+          if (!db.auditState[newStoreId]) {
+            db.auditState[newStoreId] = { counts: {}, scanLogs: [] };
           }
         }
 
-        db.wpConfig.lastSyncedAt = new Date().toISOString();
-        saveDatabase(db);
-        console.log(`[WordPress Pods Sync] Successfully synced/updated ${updatedCount} stock items from WordPress Pods`);
+        const storeId = targetStore ? targetStore.id : (db.wpConfig.selectedStoreId || db.stores[0]?.id || 'birmas-kuningan');
+
+        // Resolve Variant & Product Details
+        let variantObj = null;
+        let productObj = null;
+        if (Array.isArray(item.product_variant) && item.product_variant.length > 0) {
+          variantObj = item.product_variant[0];
+          if (Array.isArray(variantObj.product) && variantObj.product.length > 0) {
+            productObj = variantObj.product[0];
+          }
+        }
+
+        const variantId = variantObj?.ID ? `wp-${variantObj.ID}` : (item.id ? `wp-${item.id}` : '');
+        const productTitle = productObj?.post_title || extractField(item.product_variant_title) || extractField(item.variant_title) || extractField(item.title) || 'Birmas Product';
+        const variantName = variantObj?.variant || extractField(item.variant) || 'Standard';
+        const barcode = extractField(item.barcode || variantObj?.barcode || item.meta?.barcode || item.code).trim();
+        const sku = extractField(item.sku || variantObj?.sku || item.meta?.sku).trim();
+        const brand = productTitle.split(' ')[0] || extractField(item.brand) || 'Birmas';
+        const price = Number(variantObj?.regular_price ?? item.regular_price ?? item.price ?? 0);
+        const volume = Number(variantObj?.volume ?? item.volume ?? 330);
+        const unitVolume = variantObj?.unit_volume ?? item.unit_volume ?? 'ml';
+
+        // Resolve Stock
+        let stockVal = 0;
+        if (typeof item.stock === 'object' && item.stock !== null) {
+          stockVal = Number(item.stock.value ?? item.stock.rendered ?? 0);
+        } else {
+          stockVal = Number(item.stock ?? item.stock_qty ?? item.quantity ?? item.qty ?? item.meta?.stock ?? 0);
+        }
+
+        // Find existing product by ID, barcode, SKU, or Title
+        let existing = null;
+        if (variantId) {
+          existing = db.products.find((p) => p.id === variantId);
+        }
+        if (!existing && barcode) {
+          existing = db.products.find((p) => p.barcode === barcode);
+        }
+        if (!existing && sku) {
+          existing = db.products.find((p) => p.sku === sku);
+        }
+        if (!existing && productTitle) {
+          const tLower = productTitle.toLowerCase();
+          existing = db.products.find((p) =>
+            p.productTitle.toLowerCase() === tLower ||
+            tLower.includes(p.varian.toLowerCase()) ||
+            p.productTitle.toLowerCase().includes(tLower)
+          );
+        }
+
+        if (existing) {
+          if (!existing.stockByStore) existing.stockByStore = {};
+          existing.stockByStore[storeId] = stockVal;
+          if (barcode && !existing.barcode) existing.barcode = barcode;
+          if (sku && !existing.sku) existing.sku = sku;
+          if (price && !existing.price) existing.price = price;
+          existing.lastUpdated = new Date().toISOString();
+          updatedCount++;
+        } else if (productTitle || barcode) {
+          const newProd = {
+            id: variantId || `wp-${item.id || Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+            barcode: barcode || `BC-${Date.now().toString().slice(-6)}`,
+            sku: sku || `SKU-${Date.now().toString().slice(-4)}`,
+            brand: brand,
+            varian: variantName !== 'Standard' ? variantName : productTitle,
+            productTitle: productTitle,
+            packageType: variantObj?.variant || 'Kaleng',
+            volume: volume,
+            unitVolume: unitVolume,
+            price: price,
+            stockByStore: {
+              [storeId]: stockVal,
+            },
+            wpStatus: 'publish',
+            lastUpdated: new Date().toISOString(),
+            source: 'wordpress_pods',
+          };
+          db.products.push(newProd);
+          updatedCount++;
+        }
       }
+
+      db.wpConfig.lastSyncedAt = new Date().toISOString();
+      saveDatabase(db);
+      console.log(`[WordPress Pods Sync] Synced ${stocksData.length} stock items across stores. Saved to DB.`);
     }
   } catch (err) {
-    console.warn('[Auto-Sync Checker] Periodic sync note:', err.message);
+    console.warn('[WordPress Pods Sync] Periodic note:', err.message);
   }
 }
 
@@ -866,12 +704,27 @@ async function startServer() {
     });
   }
 
+  // Initial sync immediately on server start
+  runBackgroundWordPressSync(db).catch(() => {});
+
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Birmas Server] Running at http://localhost:${PORT}`);
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+if (process.argv.includes('--sync')) {
+  console.log('[CLI] Connecting to https://admin.birmas.id to sync product_variants and product_stocks...');
+  const db = loadDatabase();
+  runBackgroundWordPressSync(db).then(() => {
+    console.log(`[CLI] Sync finished! Total products in catalog: ${db.products.length}, Stores: ${db.stores.length}`);
+    process.exit(0);
+  }).catch((err) => {
+    console.error('[CLI] Sync failed:', err);
+    process.exit(1);
+  });
+} else {
+  startServer().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
+}

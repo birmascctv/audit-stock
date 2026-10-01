@@ -44,23 +44,30 @@ async function fetchPodsEndpoint(url, path, headers) {
   }
 }
 
+let isSyncing = false;
+
 // Background sync runner: syncs store locations and product_stocks Pod directly into SQLite tables
 export async function runBackgroundWordPressSync() {
-  const wpConfig = db.getWpConfig();
-  const url = process.env.WP_URL || wpConfig.wpUrl || 'https://admin.birmas.id';
-  if (!url || url.includes('demo-store.local')) return;
-
-  const authHeader = process.env.WP_APP_PASSWORD
-    ? { 'Authorization': `Basic ${Buffer.from(process.env.WP_APP_PASSWORD).toString('base64')}` }
-    : {};
-
-  const headers = {
-    ...authHeader,
-  };
-
-  const stocksEndpoint = process.env.WP_STOCKS_ENDPOINT || wpConfig.customEndpointPath || '/wp-json/api/v1/product_stocks?per_page=100';
-
+  if (isSyncing) {
+    console.log('[WordPress Pods Sync] Sync already in progress, skipping.');
+    return;
+  }
+  isSyncing = true;
   try {
+    const wpConfig = db.getWpConfig();
+    const url = process.env.WP_URL || wpConfig.wpUrl || 'https://admin.birmas.id';
+    if (!url || url.includes('demo-store.local')) return;
+
+    const authHeader = process.env.WP_APP_PASSWORD
+      ? { 'Authorization': `Basic ${Buffer.from(process.env.WP_APP_PASSWORD).toString('base64')}` }
+      : {};
+
+    const headers = {
+      ...authHeader,
+    };
+
+    const stocksEndpoint = process.env.WP_STOCKS_ENDPOINT || wpConfig.customEndpointPath || '/wp-json/api/v1/product_stocks?per_page=100';
+
     // Fetch Product Stocks Pod (contains both product variant details & store locations in one call)
     const stocksData = await fetchPodsEndpoint(url, stocksEndpoint, headers)
       || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks?per_page=50', headers)
@@ -146,6 +153,8 @@ export async function runBackgroundWordPressSync() {
     }
   } catch (err) {
     console.warn('[WordPress Pods Sync] Error:', err.message);
+  } finally {
+    isSyncing = false;
   }
 }
 
@@ -155,11 +164,6 @@ async function startServer() {
 
   // Ensure SQLite tables are initialized
   db.getDb();
-
-  // Background Auto-Checker (runs every 30 seconds)
-  setInterval(() => {
-    runBackgroundWordPressSync();
-  }, 30000);
 
   // 1. Stores API
   app.get('/api/stores', (req, res) => {
@@ -513,9 +517,6 @@ async function startServer() {
       res.sendFile(path.join(__dirname, 'dist', 'index.html'));
     });
   }
-
-  // Initial sync on server start
-  runBackgroundWordPressSync().catch(() => {});
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Birmas Server] SQLite Tables Ready at http://localhost:${PORT}`);

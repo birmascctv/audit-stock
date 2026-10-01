@@ -120,9 +120,43 @@ export function useAuditStore() {
     initializeFromBackend();
   }
 
+  // Filter stores to ONLY show: Birmas Sudirman, Kuningan, Kwitang, Kelapa Gading, and Lebak Bulus
+  const ALLOWED_STORE_KEYWORDS = [
+    'sudirman',
+    'kuningan',
+    'kwitang',
+    'kelapa gading',
+    'kgading',
+    'lebak bulus',
+    'lbulus',
+  ];
+
+  const visibleStores = computed(() => {
+    return stores.value
+      .filter((s) => {
+        const nameLower = String(s.name || '').toLowerCase();
+        const idLower = String(s.id || '').toLowerCase();
+        const codeLower = String(s.esbBranchCode || '').toLowerCase();
+        return ALLOWED_STORE_KEYWORDS.some(
+          (kw) => nameLower.includes(kw) || idLower.includes(kw) || codeLower.includes(kw)
+        );
+      })
+      .sort((a, b) => {
+        const order = ['sudirman', 'kuningan', 'kwitang', 'kelapa gading', 'lebak bulus'];
+        const getRank = (st) => {
+          const n = String(st.name || '').toLowerCase();
+          const idx = order.findIndex((k) => n.includes(k));
+          return idx === -1 ? 99 : idx;
+        };
+        return getRank(a) - getRank(b);
+      });
+  });
+
   const currentStore = computed(() => {
     return (
-      stores.value.find((s) => s.id === selectedStoreId.value) || stores.value[0]
+      visibleStores.value.find((s) => s.id === selectedStoreId.value) ||
+      visibleStores.value[0] ||
+      stores.value[0]
     );
   });
 
@@ -256,14 +290,21 @@ export function useAuditStore() {
   async function addNewBarcode(payload) {
     const res = await saveNewBarcode(payload);
     if (res.success && res.product) {
+      const cleanNew = String(res.product.barcode || '').toLowerCase().trim();
       const idx = wpProducts.value.findIndex(
-        (p) => p.barcode.toLowerCase() === res.product.barcode.toLowerCase()
+        (p) => p.id === res.product.id || (p.barcode && String(p.barcode).toLowerCase().trim() === cleanNew)
       );
       if (idx >= 0) {
-        wpProducts.value[idx] = res.product;
+        wpProducts.value[idx] = { ...wpProducts.value[idx], ...res.product };
       } else {
         wpProducts.value.push(res.product);
       }
+      try {
+        const fresh = await fetchProducts();
+        if (fresh && fresh.length > 0) {
+          wpProducts.value = fresh;
+        }
+      } catch {}
     }
     return res;
   }
@@ -377,7 +418,8 @@ export function useAuditStore() {
   }
 
   return {
-    stores,
+    stores: visibleStores,
+    rawStores: stores,
     selectedStoreId,
     currentStore,
     wpConfig,

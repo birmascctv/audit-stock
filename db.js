@@ -127,6 +127,16 @@ function initTables(db) {
   upsertUser.run('user-admin', 'admin', 'admin@birmas.id', 'admin666', 'Admin', 'admin');
   upsertUser.run('user-chrisna', 'chrisna', 'chrisna@birmas.id', 'auditor666', 'Chrisna', 'auditor');
 
+  // Purge any legacy mock barcodes from previous template versions
+  db.exec(`
+    DELETE FROM products WHERE id LIKE 'wp-10%';
+    UPDATE products SET barcode = NULL WHERE barcode IN (
+      '8997026800122', '8997026800030', '8997026800078', '8997026800016',
+      '8993156000074', '8993156668267', '8993156668229', '8998888001011',
+      '8801048951112', '5000213007624'
+    );
+  `);
+
 
   // Seed default WP config if not present
   const wpUrl = db.prepare('SELECT value FROM app_config WHERE key = ?;').get('wp_url');

@@ -1,16 +1,13 @@
 <script setup>
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { useAuth, DEFAULT_ACCOUNTS } from '../composables/useAuth.js';
+import { useAuth } from '../composables/useAuth.js';
 import {
   ClipboardCheck,
   Lock,
   User as UserIcon,
   ArrowRight,
-  ShieldCheck,
-  AlertCircle,
-  KeyRound,
-  CheckCircle2
+  AlertCircle
 } from 'lucide-vue-next';
 
 const router = useRouter();
@@ -42,12 +39,6 @@ async function handleLogin() {
     isLoading.value = false;
   }
 }
-
-function fillCredentials(account) {
-  username.value = account.username;
-  password.value = account.username === 'admin' ? 'admin666' : 'auditor666';
-  errorMessage.value = null;
-}
 </script>
 
 <template>
@@ -65,29 +56,19 @@ function fillCredentials(account) {
         <h1 class="text-2xl font-black text-slate-900 tracking-tight">
           Birmas Stock Audit
         </h1>
-        <p class="text-xs text-slate-500 mt-1">
-          Store physical barcode audit station with backend authentication
-        </p>
       </div>
 
-      <!-- Main Login Card (Light Gray & White Theme) -->
+      <!-- Main Login Card (Clean Minimal Theme) -->
       <div class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/60">
-        <div class="flex items-center justify-between mb-5 border-b border-slate-100 pb-3">
-          <div>
-            <h2 class="text-base font-bold text-slate-900">Sign In</h2>
-            <p class="text-[11px] text-slate-500">Access store audit records & counting station</p>
-          </div>
-          <span class="px-2.5 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-[10px] font-bold">
-            Backend Saved
-          </span>
+        <div class="mb-5 border-b border-slate-100 pb-3">
+          <h2 class="text-base font-bold text-slate-900">Sign In</h2>
         </div>
 
         <form @submit.prevent="handleLogin" class="space-y-4">
           <!-- Username / Email -->
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-              <span>Username or Email:</span>
-              <span class="text-[10px] text-slate-400 font-normal">e.g. admin or auditor</span>
+            <label class="block text-xs font-bold text-slate-700 mb-1.5">
+              Username or Email
             </label>
             <div class="relative">
               <UserIcon class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -104,9 +85,8 @@ function fillCredentials(account) {
 
           <!-- Password -->
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-              <span>Password:</span>
-              <span class="text-[10px] text-slate-400 font-normal">Stored securely in backend</span>
+            <label class="block text-xs font-bold text-slate-700 mb-1.5">
+              Password
             </label>
             <div class="relative">
               <Lock class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -136,38 +116,10 @@ function fillCredentials(account) {
             :disabled="isLoading"
             class="w-full py-3 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-teal-600/25 transition-all disabled:opacity-50 mt-2 cursor-pointer"
           >
-            <span>{{ isLoading ? 'Verifying with Backend...' : 'Sign In to Station' }}</span>
+            <span>{{ isLoading ? 'Signing In...' : 'Sign In' }}</span>
             <ArrowRight class="w-4 h-4" />
           </button>
         </form>
-
-        <!-- Optional Demo Credentials Toggle -->
-        <div class="mt-6 pt-4 border-t border-slate-100">
-          <details class="text-[11px] text-slate-500 cursor-pointer group">
-            <summary class="font-medium hover:text-teal-700 flex items-center gap-1 select-none">
-              <KeyRound class="w-3.5 h-3.5 text-teal-600" />
-              <span>Show demo login credentials</span>
-            </summary>
-            <div class="mt-2.5 space-y-1.5 pt-1">
-              <button
-                v-for="acc in DEFAULT_ACCOUNTS"
-                :key="acc.id"
-                @click="fillCredentials(acc)"
-                type="button"
-                class="w-full p-2 rounded-xl border border-slate-200 hover:border-teal-400 hover:bg-teal-50/50 text-left transition-all flex items-center justify-between"
-              >
-                <div>
-                  <div class="flex items-center gap-1.5">
-                    <span class="font-bold text-xs text-slate-800">{{ acc.name }}</span>
-                    <span class="text-[10px] px-1 py-0.2 rounded bg-slate-100 text-slate-600">{{ acc.role }}</span>
-                  </div>
-                  <span class="text-[10px] text-slate-500 font-mono">User: <strong>{{ acc.username }}</strong></span>
-                </div>
-                <span class="text-[10px] font-bold text-teal-700">Autofill</span>
-              </button>
-            </div>
-          </details>
-        </div>
       </div>
     </div>
   </div>

@@ -20,14 +20,19 @@ function extractField(f) {
 }
 
 async function fetchPodsEndpoint(url, path, headers) {
-  const fullUrl = `${url.replace(/\/$/, '')}${path}`;
+  const fullUrl = path.startsWith('http') ? path : `${url.replace(/\/$/, '')}${path.startsWith('/') ? path : '/' + path}`;
   try {
-    console.log(`[WordPress Pods Sync] Requesting ${fullUrl} (timeout 60s) ...`);
+    console.log(`[WordPress Pods Sync] Requesting ${fullUrl} (timeout 45s) ...`);
     const startTime = Date.now();
-    const res = await fetch(fullUrl, { headers, signal: AbortSignal.timeout(60000) });
+    const reqHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BirmasStockAudit/1.0',
+      'Accept': 'application/json',
+      ...headers,
+    };
+    const res = await fetch(fullUrl, { headers: reqHeaders, signal: AbortSignal.timeout(45000) });
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     if (!res.ok) {
-      console.warn(`[WordPress Pods Sync] HTTP ${res.status} from ${fullUrl} (${duration}s)`);
+      console.warn(`[WordPress Pods Sync] HTTP ${res.status} ${res.statusText} from ${fullUrl} (${duration}s)`);
       return null;
     }
     const json = await res.json();
@@ -50,34 +55,13 @@ export async function runBackgroundWordPressSync() {
     : {};
 
   const headers = {
-    'Accept': 'application/json',
     ...authHeader,
   };
 
   const stocksEndpoint = process.env.WP_STOCKS_ENDPOINT || wpConfig.customEndpointPath || '/wp-json/api/v1/product_stocks?per_page=100';
-  const locationsEndpoint = process.env.WP_LOCATIONS_ENDPOINT || '/wp-json/api/v1/locations?per_page=100';
 
   try {
-    // 1. Fetch Locations pod if available to populate SQLite stores table
-    const locationsData = await fetchPodsEndpoint(url, locationsEndpoint, headers)
-      || await fetchPodsEndpoint(url, '/wp-json/api/v1/location?per_page=100', headers)
-      || await fetchPodsEndpoint(url, '/wp-json/api/v1/locations', headers);
-
-    if (locationsData && locationsData.length > 0) {
-      for (const loc of locationsData) {
-        const storeId = loc.post_name || `birmas-${(loc.outlet_code || loc.post_title || 'store').toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-        db.saveStore({
-          id: storeId,
-          wpId: loc.ID,
-          name: loc.post_title || 'Birmas Location',
-          locationCode: loc.outlet_code ? `BRM-${loc.outlet_code.toUpperCase()}` : `BRM-${storeId.slice(-3).toUpperCase()}`,
-          esbBranchCode: loc.branch_code_esb || '',
-        });
-      }
-      console.log(`[WordPress Pods Sync] Synchronized store locations into SQLite stores table.`);
-    }
-
-    // 2. Fetch Product Stocks Pod (contains both product variant details & stock per location)
+    // Fetch Product Stocks Pod (contains both product variant details & store locations in one call)
     const stocksData = await fetchPodsEndpoint(url, stocksEndpoint, headers)
       || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks?per_page=50', headers)
       || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks', headers);

@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "sync:wp": "node server.js --sync",
+    "sync:esb": "node server.js --sync-esb",
     "clean": "rm -rf dist",
     "lint": "node --check server.js && node --check vite.config.js"
   },

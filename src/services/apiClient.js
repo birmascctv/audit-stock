@@ -153,3 +153,12 @@ export async function apiSyncWordPress(config) {
   });
   return await res.json();
 }
+
+export async function apiSyncDirectESB() {
+  const res = await fetch(`${API_BASE}/esb/sync-direct`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return await res.json();
+}
+

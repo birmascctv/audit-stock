@@ -181,6 +181,157 @@ export async function runBackgroundWordPressSync() {
   }
 }
 
+let isEsbSyncing = false;
+
+// Direct ESB Live Sync: Connects straight to core-api.esb.co.id to fetch real store stock per branch
+export async function runDirectESBSync() {
+  if (isEsbSyncing) {
+    console.log('[Direct ESB Sync] Sync already in progress, skipping.');
+    return { success: false, message: 'Already syncing' };
+  }
+  isEsbSyncing = true;
+  try {
+    const token = process.env.ESB_BEARER_TOKEN || 'GP1bo7ccOiykqZCkDsBMTNaw5XxAReug0rNKjoXjTGplRyKrnvzTdAJmWVjI';
+    const baseUrl = (process.env.ESB_BASE_URL || 'https://core-api.esb.co.id').replace(/\/$/, '');
+    const visitPurposeID = process.env.ESB_VISIT_PURPOSE_ID || '10';
+
+    console.log(`[Direct ESB Sync] Connecting to ${baseUrl} ...`);
+    const headers = {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 BirmasAudit/1.0',
+    };
+
+    // 1. Fetch live branches from ESB
+    let branches = [];
+    try {
+      const res = await fetch(`${baseUrl}/extv1/branch`, { headers });
+      if (res.ok) {
+        branches = await res.json();
+      }
+    } catch (err) {
+      console.warn('[Direct ESB Sync] Failed to fetch branches from ESB, using active branch list:', err.message);
+    }
+
+    if (!Array.isArray(branches) || branches.length === 0) {
+      branches = [
+        { branchCode: 'BRMS', branchName: 'SUDIRMAN' },
+        { branchCode: 'BRMT', branchName: 'TEBET' },
+        { branchCode: 'BRMK', branchName: 'KUNINGAN' },
+        { branchCode: 'BRMKG', branchName: 'KELAPA GADING' },
+        { branchCode: 'BRMLB', branchName: 'LEBAK BULUS' },
+        { branchCode: 'BRMKW', branchName: 'KWITANG' },
+        { branchCode: 'BBND', branchName: 'BALI NUSA DUA' },
+      ];
+    }
+
+    console.log(`[Direct ESB Sync] Registering ${branches.length} branches in SQLite...`);
+    const branchMap = new Map();
+    for (const b of branches) {
+      const existingStores = db.getAllStores();
+      const existing = existingStores.find(
+        (s) => s.esbBranchCode === b.branchCode || s.locationCode === b.branchCode || s.id.includes(b.branchCode.toLowerCase())
+      );
+      const storeId = existing ? existing.id : `birmas-${b.branchCode.toLowerCase()}`;
+      db.saveStore({
+        id: storeId,
+        wpId: existing?.wpId || null,
+        name: existing?.name || `Birmas ${b.branchName}`,
+        locationCode: b.branchCode,
+        esbBranchCode: b.branchCode,
+      });
+      branchMap.set(b.branchCode, storeId);
+    }
+
+    // Index existing products in SQLite by title/variant to preserve IDs and mapped barcodes
+    const allExisting = db.getAllProducts();
+    const existingByName = new Map();
+    for (const p of allExisting) {
+      if (p.productTitle) existingByName.set(p.productTitle.toLowerCase().trim(), p);
+      if (p.varian) existingByName.set(p.varian.toLowerCase().trim(), p);
+    }
+
+    const productCatalog = new Map();
+    let totalStockEntries = 0;
+
+    // 2. Fetch menu & stock per branch
+    for (const b of branches) {
+      try {
+        const menuUrl = `${baseUrl}/extv1/menu?branchCode=${encodeURIComponent(b.branchCode)}&visitPurposeID=${visitPurposeID}`;
+        const res = await fetch(menuUrl, { headers });
+        if (!res.ok) {
+          console.warn(`[Direct ESB Sync] Branch ${b.branchCode} returned HTTP ${res.status}`);
+          continue;
+        }
+        const categories = await res.json();
+        if (!Array.isArray(categories)) continue;
+
+        const storeId = branchMap.get(b.branchCode);
+
+        for (const cat of categories) {
+          for (const detail of (cat.menuCategoryDetails || [])) {
+            for (const m of (detail.menus || [])) {
+              const menuId = m.menuID;
+              const menuName = (m.menuName || '').trim();
+              if (!menuName) continue;
+
+              const cleanName = menuName.replace(/^\([0-9+]+\)\s*/, '');
+              const existing = existingByName.get(menuName.toLowerCase()) || existingByName.get(cleanName.toLowerCase());
+
+              const prodId = existing ? existing.id : `esb-${menuId}`;
+              const barcode = existing?.barcode || null;
+              const price = Number(m.sellPrice ?? m.price ?? existing?.price ?? 0);
+              const qty = Number(m.qty ?? 0);
+              const brand = cleanName.split(' ')[0] || existing?.brand || 'Birmas';
+
+              if (!productCatalog.has(prodId)) {
+                productCatalog.set(prodId, {
+                  id: prodId,
+                  barcode: barcode,
+                  sku: String(m.menuCode || existing?.sku || menuId),
+                  brand: brand,
+                  varian: cleanName,
+                  productTitle: menuName,
+                  packageType: menuName.toLowerCase().includes('botol') ? 'Botol' : (menuName.toLowerCase().includes('can') || menuName.toLowerCase().includes('kaleng')) ? 'Kaleng' : 'Standard',
+                  volume: existing?.volume ?? 330,
+                  unitVolume: existing?.unitVolume || 'ml',
+                  price: price,
+                  wpStatus: 'publish',
+                  lastUpdated: new Date().toISOString(),
+                });
+              }
+
+              if (storeId) {
+                db.setProductStock(storeId, prodId, qty);
+                totalStockEntries++;
+              }
+            }
+          }
+        }
+        console.log(`[Direct ESB Sync] Branch ${b.branchCode} (${b.branchName}) synced.`);
+      } catch (err) {
+        console.warn(`[Direct ESB Sync] Branch ${b.branchCode} sync error:`, err.message);
+      }
+    }
+
+    // Save all products into SQLite
+    for (const prod of productCatalog.values()) {
+      db.saveProduct(prod);
+    }
+
+    db.setConfig('last_esb_synced_at', new Date().toISOString());
+    console.log(`[Direct ESB Sync] Success! Synced ${productCatalog.size} products & ${totalStockEntries} branch stocks.`);
+    return {
+      success: true,
+      totalProducts: productCatalog.size,
+      totalStockEntries,
+      totalStores: branches.length,
+    };
+  } finally {
+    isEsbSyncing = false;
+  }
+}
+
 async function startServer() {
   const app = express();
   app.use(express.json());
@@ -465,7 +616,57 @@ async function startServer() {
     }
   });
 
-  // 12. Instant Webhook from ESB / WordPress
+  // 12. Trigger WordPress to Sync with ESB POS
+  app.post('/api/wordpress/sync-esb', async (req, res) => {
+    try {
+      const wpConfig = db.getWpConfig();
+      const url = process.env.WP_URL || wpConfig.wpUrl || 'https://admin.birmas.id';
+      const endpoint = `${url.replace(/\/$/, '')}/wp-json/api/v1/synchronize-stock-esb`;
+      console.log(`[ESB Sync Trigger] Sending POST to ${endpoint} ...`);
+
+      const authHeader = process.env.WP_APP_PASSWORD
+        ? { 'Authorization': `Basic ${Buffer.from(process.env.WP_APP_PASSWORD).toString('base64')}` }
+        : {};
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 BirmasStockAudit/1.0',
+          ...authHeader,
+        },
+      });
+
+      const text = await response.text();
+      let data = text;
+      try { data = JSON.parse(text); } catch (_) {}
+
+      console.log(`[ESB Sync Trigger] Response HTTP ${response.status}`);
+      res.json({
+        success: response.ok,
+        status: response.status,
+        result: data,
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 13. Direct ESB Live Sync
+  app.post('/api/esb/sync-direct', async (req, res) => {
+    try {
+      const result = await runDirectESBSync();
+      res.json({
+        success: true,
+        message: 'Successfully synchronized directly with ESB POS',
+        ...result,
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 14. Instant Webhook from ESB / WordPress
   app.post('/api/esb/webhook', (req, res) => {
     const { location, variant_title, stock } = req.body;
     console.log('[ESB Webhook Received]:', req.body);
@@ -546,7 +747,18 @@ async function startServer() {
   });
 }
 
-if (process.argv.includes('--sync')) {
+if (process.argv.includes('--sync-esb')) {
+  console.log('[CLI] Connecting directly to ESB Production (core-api.esb.co.id)...');
+  runDirectESBSync().then((res) => {
+    const stores = db.getAllStores();
+    const products = db.getAllProducts();
+    console.log(`[CLI] Direct ESB Sync complete! Total products in SQLite: ${products.length}, Stores: ${stores.length}, Stock entries: ${res.totalStockEntries}`);
+    process.exit(0);
+  }).catch((err) => {
+    console.error('[CLI] Direct ESB Sync failed:', err);
+    process.exit(1);
+  });
+} else if (process.argv.includes('--sync')) {
   console.log('[CLI] Connecting to https://admin.birmas.id to sync product_stocks into SQLite tables...');
   runBackgroundWordPressSync().then(() => {
     const stores = db.getAllStores();

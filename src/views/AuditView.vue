@@ -53,6 +53,7 @@ const {
   resetCurrentAudit,
   selectStore,
   syncFromWordPress,
+  syncFromESBDirect,
   finalizeAudit,
   isSyncing,
   lastSyncStatus,
@@ -239,16 +240,16 @@ function exportAuditCSV() {
           <span>Add New Barcode</span>
         </button>
 
-        <!-- Sync WordPress/ESB Button -->
+        <!-- Direct ESB Sync Button -->
         <button
-          @click="syncFromWordPress"
+          @click="syncFromESBDirect"
           :disabled="isSyncing"
           type="button"
-          class="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
-          title="Pull latest stock quantities from WordPress / ESB"
+          class="px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm"
+          title="Direct live sync of real chiller stocks from ESB Cloud"
         >
           <RefreshCw class="w-3.5 h-3.5 text-teal-600" :class="isSyncing ? 'animate-spin' : ''" />
-          <span>{{ isSyncing ? 'Syncing...' : 'Sync ESB Stock' }}</span>
+          <span>{{ isSyncing ? 'Syncing ESB...' : 'Direct ESB Sync' }}</span>
         </button>
 
         <!-- Finalize Audit Button -->

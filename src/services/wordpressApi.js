@@ -14,6 +14,7 @@ import {
   apiDeleteBarcodeMatch,
   apiFetchDatabaseStatus,
   apiSyncWordPress as apiRunSync,
+  apiSyncDirectESB,
   apiAddStore,
   apiDeleteStore,
 } from './apiClient.js';
@@ -320,6 +321,10 @@ export async function saveWordPressConfig(config) {
 
 export async function syncWordPressData(config) {
   return await apiRunSync(config);
+}
+
+export async function syncDirectESB() {
+  return await apiSyncDirectESB();
 }
 
 export async function fetchDatabaseHealth() {

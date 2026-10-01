@@ -111,6 +111,7 @@ function handleSwitchSource(type) {
   if (type === 'entirely_new') {
     productTitleInput.value = '';
     brandInput.value = dynamicBrands.value[0] || 'Birmas';
+    customBrand.value = '';
     varianInput.value = '';
     priceInput.value = 0;
     wpIdInput.value = '';
@@ -119,16 +120,6 @@ function handleSwitchSource(type) {
     const first = esbProductList.value[0];
     selectedProductId.value = first.id;
     handleSelectPreset(first.id);
-  }
-}
-    brandInput.value = 'Other';
-    customBrand.value = '';
-    varianInput.value = '';
-    wpIdInput.value = '';
-    skuInput.value = '';
-    priceInput.value = 0;
-  } else {
-    handleSelectPreset(selectedPresetIndex.value);
   }
 }
 

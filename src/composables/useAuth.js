@@ -7,32 +7,32 @@ export const DEFAULT_ACCOUNTS = [
     id: 'user-admin',
     username: 'admin',
     email: 'admin@birmas.id',
-    name: 'Bertha Evania',
-    role: 'Audit Supervisor',
-    hint: 'Password: admin123',
+    name: 'Admin',
+    role: 'Administrator',
+    hint: 'Password: admin666',
   },
   {
-    id: 'user-auditor',
-    username: 'auditor',
-    email: 'auditor@birmas.id',
-    name: 'Store Auditor Staff',
-    role: 'Store Auditor',
-    hint: 'Password: birmas2026',
+    id: 'user-chrisna',
+    username: 'chrisna',
+    email: 'chrisna@birmas.id',
+    name: 'Chrisna',
+    role: 'Auditor',
+    hint: 'Password: auditor666',
   },
 ];
 
 const currentUser = ref(getStoredUser());
 
 function getStoredUser() {
-  if (typeof window === 'undefined') return DEFAULT_ACCOUNTS[0];
+  if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (raw) {
       return JSON.parse(raw);
     }
-    return DEFAULT_ACCOUNTS[0];
+    return null;
   } catch {
-    return DEFAULT_ACCOUNTS[0];
+    return null;
   }
 }
 
@@ -69,14 +69,18 @@ export function useAuth() {
       const matched = DEFAULT_ACCOUNTS.find(
         (u) => u.username.toLowerCase() === cleanUser || u.email.toLowerCase() === cleanUser
       );
-      if (matched && (passwordInput === 'admin123' || passwordInput === 'birmas2026')) {
+      if (
+        matched &&
+        ((cleanUser === 'admin' && passwordInput === 'admin666') ||
+         (cleanUser === 'chrisna' && passwordInput === 'auditor666'))
+      ) {
         currentUser.value = matched;
         if (typeof window !== 'undefined') {
           localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(matched));
         }
-        return { success: true, message: 'Logged in successfully (offline fallback)', user: matched };
+        return { success: true, message: 'Logged in successfully', user: matched };
       }
-      return { success: false, message: err.message || 'Connection error with auth server' };
+      return { success: false, message: err.message || 'Invalid username or password' };
     }
   }
 

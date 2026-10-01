@@ -112,12 +112,20 @@ const filteredItems = computed(() => {
     if (statusFilter.value === 'pending' && item.status !== 'pending') {
       return false;
     }
-    if (searchQuery.value) {
+    if (searchQuery.value && searchQuery.value.trim()) {
       const q = searchQuery.value.toLowerCase().trim();
+      const bCode = String(item.barcode || '').toLowerCase();
+      const bBrand = String(item.brand || '').toLowerCase();
+      const bVarian = String(item.varian || '').toLowerCase();
+      const bTitle = String(item.productTitle || '').toLowerCase();
+      const bSku = String(item.sku || '').toLowerCase();
+
       const match =
-        item.barcode.includes(q) ||
-        item.brand.toLowerCase().includes(q) ||
-        item.varian.toLowerCase().includes(q);
+        bCode.includes(q) ||
+        bBrand.includes(q) ||
+        bVarian.includes(q) ||
+        bTitle.includes(q) ||
+        bSku.includes(q);
       if (!match) return false;
     }
     return true;
@@ -659,24 +667,24 @@ function exportAuditCSV() {
         </div>
       </div>
 
-      <!-- Main Audit Table -->
-      <div class="overflow-x-auto flex-1">
+      <!-- Main Audit Table (Sticky Header like Google Sheets) -->
+      <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)] min-h-[450px] flex-1 relative border-t border-slate-200">
         <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-              <th class="py-3 px-4 w-12 text-center">No</th>
-              <th class="py-3 px-4">Kode Barcode</th>
-              <th class="py-3 px-4">Brand</th>
-              <th class="py-3 px-4">Varian & Packaging</th>
-              <th class="py-3 px-4 text-center bg-slate-100/60 text-slate-700">
+          <thead class="sticky top-0 z-20 shadow-sm">
+            <tr class="bg-slate-100 border-b border-slate-300 text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+              <th class="py-3 px-4 w-12 text-center bg-slate-100">No</th>
+              <th class="py-3 px-4 bg-slate-100">Kode Barcode</th>
+              <th class="py-3 px-4 bg-slate-100">Brand</th>
+              <th class="py-3 px-4 bg-slate-100">Varian & Packaging</th>
+              <th class="py-3 px-4 text-center bg-slate-200/90 text-slate-800">
                 ESB Expected
               </th>
-              <th class="py-3 px-4 text-center bg-teal-50 text-teal-800">
+              <th class="py-3 px-4 text-center bg-teal-100 text-teal-900">
                 Scanned Count
               </th>
-              <th class="py-3 px-4 text-center">Discrepancy</th>
-              <th class="py-3 px-4 text-center">Audit Status</th>
-              <th class="py-3 px-4 text-right">Action</th>
+              <th class="py-3 px-4 text-center bg-slate-100">Discrepancy</th>
+              <th class="py-3 px-4 text-center bg-slate-100">Audit Status</th>
+              <th class="py-3 px-4 text-right bg-slate-100">Action</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 text-sm">

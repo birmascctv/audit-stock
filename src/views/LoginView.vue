@@ -16,8 +16,8 @@ import {
 const router = useRouter();
 const { loginWithBackend } = useAuth();
 
-const username = ref('admin');
-const password = ref('admin123');
+const username = ref('');
+const password = ref('');
 const isLoading = ref(false);
 const errorMessage = ref(null);
 
@@ -45,7 +45,7 @@ async function handleLogin() {
 
 function fillCredentials(account) {
   username.value = account.username;
-  password.value = account.username === 'admin' ? 'admin123' : 'birmas2026';
+  password.value = account.username === 'admin' ? 'admin666' : 'auditor666';
   errorMessage.value = null;
 }
 </script>
@@ -141,33 +141,32 @@ function fillCredentials(account) {
           </button>
         </form>
 
-        <!-- Quick 1-Click Credentials Helper for Testing -->
-        <div class="mt-6 pt-5 border-t border-slate-100">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+        <!-- Optional Demo Credentials Toggle -->
+        <div class="mt-6 pt-4 border-t border-slate-100">
+          <details class="text-[11px] text-slate-500 cursor-pointer group">
+            <summary class="font-medium hover:text-teal-700 flex items-center gap-1 select-none">
               <KeyRound class="w-3.5 h-3.5 text-teal-600" />
-              <span>Available Backend User Accounts:</span>
-            </span>
-          </div>
-
-          <div class="space-y-1.5">
-            <button
-              v-for="acc in DEFAULT_ACCOUNTS"
-              :key="acc.id"
-              @click="fillCredentials(acc)"
-              type="button"
-              class="w-full p-2.5 rounded-xl border border-slate-200 hover:border-teal-400 hover:bg-teal-50/50 text-left transition-all flex items-center justify-between group cursor-pointer"
-            >
-              <div>
-                <div class="flex items-center gap-1.5">
-                  <span class="font-extrabold text-xs text-slate-800 group-hover:text-teal-900">{{ acc.name }}</span>
-                  <span class="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-semibold">{{ acc.role }}</span>
+              <span>Show demo login credentials</span>
+            </summary>
+            <div class="mt-2.5 space-y-1.5 pt-1">
+              <button
+                v-for="acc in DEFAULT_ACCOUNTS"
+                :key="acc.id"
+                @click="fillCredentials(acc)"
+                type="button"
+                class="w-full p-2 rounded-xl border border-slate-200 hover:border-teal-400 hover:bg-teal-50/50 text-left transition-all flex items-center justify-between"
+              >
+                <div>
+                  <div class="flex items-center gap-1.5">
+                    <span class="font-bold text-xs text-slate-800">{{ acc.name }}</span>
+                    <span class="text-[10px] px-1 py-0.2 rounded bg-slate-100 text-slate-600">{{ acc.role }}</span>
+                  </div>
+                  <span class="text-[10px] text-slate-500 font-mono">User: <strong>{{ acc.username }}</strong></span>
                 </div>
-                <span class="text-[11px] text-slate-500 font-mono">User: <strong>{{ acc.username }}</strong> • {{ acc.hint }}</span>
-              </div>
-              <span class="text-[11px] font-bold text-teal-700 opacity-80 group-hover:opacity-100">Use</span>
-            </button>
-          </div>
+                <span class="text-[10px] font-bold text-teal-700">Autofill</span>
+              </button>
+            </div>
+          </details>
         </div>
       </div>
     </div>

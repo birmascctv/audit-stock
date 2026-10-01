@@ -193,7 +193,7 @@ export async function runDirectESBSync() {
   try {
     const token = process.env.ESB_BEARER_TOKEN || 'GP1bo7ccOiykqZCkDsBMTNaw5XxAReug0rNKjoXjTGplRyKrnvzTdAJmWVjI';
     const baseUrl = (process.env.ESB_BASE_URL || 'https://core-api.esb.co.id').replace(/\/$/, '');
-    const visitPurposeID = process.env.ESB_VISIT_PURPOSE_ID || '10';
+    const defaultVp = process.env.ESB_VISIT_PURPOSE_ID || '1';
 
     console.log(`[Direct ESB Sync] Connecting to ${baseUrl} ...`);
     const headers = {
@@ -257,8 +257,13 @@ export async function runDirectESBSync() {
     // 2. Fetch menu & stock per branch
     for (const b of branches) {
       try {
-        const menuUrl = `${baseUrl}/extv1/menu?branchCode=${encodeURIComponent(b.branchCode)}&visitPurposeID=${visitPurposeID}`;
-        const res = await fetch(menuUrl, { headers });
+        let res = await fetch(`${baseUrl}/extv1/menu?branchCode=${encodeURIComponent(b.branchCode)}&visitPurposeID=${defaultVp}`, { headers });
+        if (!res.ok) {
+          res = await fetch(`${baseUrl}/extv1/menu?branchCode=${encodeURIComponent(b.branchCode)}&visitPurposeID=2`, { headers });
+        }
+        if (!res.ok) {
+          res = await fetch(`${baseUrl}/extv1/menu?branchCode=${encodeURIComponent(b.branchCode)}&visitPurposeID=10`, { headers });
+        }
         if (!res.ok) {
           console.warn(`[Direct ESB Sync] Branch ${b.branchCode} returned HTTP ${res.status}`);
           continue;
@@ -744,6 +749,16 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Birmas Server] SQLite Tables Ready at http://localhost:${PORT}`);
+    // Run initial ESB sync after 3 seconds, then every 10 minutes
+    setTimeout(() => {
+      runDirectESBSync().catch((e) => console.warn('[Initial ESB Sync Error]:', e.message));
+    }, 3000);
+
+    const ESB_AUTO_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+    setInterval(() => {
+      console.log('[Auto-Sync] Running scheduled 10-minute background sync from ESB Cloud...');
+      runDirectESBSync().catch((e) => console.warn('[Periodic ESB Sync Error]:', e.message));
+    }, ESB_AUTO_SYNC_INTERVAL_MS);
   });
 }
 

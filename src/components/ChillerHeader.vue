@@ -110,27 +110,13 @@ onUnmounted(() => {
           </nav>
         </div>
 
-        <!-- Right Side: Auto-Checker, Quick Store Switcher, Tools & Logout -->
+        <!-- Right Side: Auto-Checker, Tools & Logout -->
         <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
           <!-- Live Auto-Checker Status -->
           <div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-medium" title="Background checker pulls fresh ESB stock and physical scans every 10s-30s">
             <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
             <span class="font-bold">Auto-Sync</span>
             <span class="text-teal-600 text-[10px]">({{ lastCheckedAt }})</span>
-          </div>
-
-          <!-- Quick Store Switcher -->
-          <div class="relative flex items-center">
-            <Building2 class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
-            <select
-              :value="selectedStoreId"
-              @change="selectStore($event.target.value)"
-              class="text-xs bg-slate-50 border border-slate-300 rounded-xl pl-8 pr-4 py-1.5 font-bold text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer shadow-sm"
-            >
-              <option v-for="s in stores" :key="s.id" :value="s.id">
-                {{ s.name }}
-              </option>
-            </select>
           </div>
 
           <!-- Sound Mute Toggle -->

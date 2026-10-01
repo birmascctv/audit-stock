@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useAuditStore } from '../composables/useAuditStore.js';
 import {
   Barcode,
@@ -29,41 +29,42 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'barcodeAdded']);
 
-const { stores, currentStore, addNewBarcode } = useAuditStore();
+const { stores, currentStore, wpProducts, addNewBarcode } = useAuditStore();
 
-// Known Product Variants from WordPress Pods for fast 1-click matching
-const KNOWN_WP_VARIANTS = [
-  { id: '12880', brand: 'Guinness', title: 'Guinness Draught In Can 440ml', varian: 'Draught In Can', packageType: 'Kaleng', volume: 440, unitVolume: 'ml', price: 58000 },
-  { id: '12877', brand: 'Cham Joeun', title: 'Cham Joeun Lychee Botol 360ml', varian: 'Lychee', packageType: 'Botol', volume: 360, unitVolume: 'ml', price: 104000 },
-  { id: '12878', brand: 'Cham Joeun', title: 'Cham Joeun Original Botol 360ml', varian: 'Original', packageType: 'Botol', volume: 360, unitVolume: 'ml', price: 104000 },
-  { id: '12882', brand: 'Orang Tua', title: 'Orang Tua AO Botol 620ml', varian: 'AO', packageType: 'Botol', volume: 620, unitVolume: 'ml', price: 65000 },
-  { id: '101', brand: 'Kulturale', title: 'Kulturale Lychee Kaleng 330ml', varian: 'Lychee', packageType: 'Kaleng', volume: 330, unitVolume: 'ml', price: 35000 },
-  { id: '102', brand: 'Kulturale', title: 'Kulturale Mango Kaleng 330ml', varian: 'Mango', packageType: 'Kaleng', volume: 330, unitVolume: 'ml', price: 35000 },
-  { id: '103', brand: 'Kulturale', title: 'Kulturale Apple Kaleng 330ml', varian: 'Apple', packageType: 'Kaleng', volume: 330, unitVolume: 'ml', price: 35000 },
-  { id: '104', brand: 'Kulturale', title: 'Kulturale Original Kaleng 330ml', varian: 'Original', packageType: 'Kaleng', volume: 330, unitVolume: 'ml', price: 35000 },
-  { id: '105', brand: 'Albens', title: 'Albens LL Stout Kaleng 330ml', varian: 'LL Stout', packageType: 'Kaleng', volume: 330, unitVolume: 'ml', price: 45000 },
-  { id: '106', brand: 'Albens', title: 'Albens Amarillo Kaleng 330ml', varian: 'Amarillo', packageType: 'Kaleng', volume: 330, unitVolume: 'ml', price: 45000 },
-  { id: '107', brand: 'Albens', title: 'Albens Naganini Kaleng 330ml', varian: 'Naganini', packageType: 'Kaleng', volume: 330, unitVolume: 'ml', price: 45000 },
-];
+// Live Dynamic Product Variants from ESB Cloud
+const esbProductList = computed(() => {
+  if (!wpProducts.value || wpProducts.value.length === 0) return [];
+  return [...wpProducts.value].sort((a, b) =>
+    (a.productTitle || a.varian || '').localeCompare(b.productTitle || b.varian || '')
+  );
+});
+
+const dynamicBrands = computed(() => {
+  const set = new Set();
+  esbProductList.value.forEach((p) => {
+    if (p.brand) set.add(p.brand.trim());
+  });
+  return Array.from(set).sort();
+});
 
 const barcodeSourceType = ref('from_wp_variant');
-const selectedPresetIndex = ref('0');
+const selectedProductId = ref('');
 
 const barcodeInput = ref('');
-const productTitleInput = ref('Guinness Draught In Can 440ml');
-const brandInput = ref('Guinness');
+const productTitleInput = ref('');
+const brandInput = ref('');
 const customBrand = ref('');
-const varianInput = ref('Draught In Can');
-const packageTypeInput = ref('Kaleng');
-const volumeInput = ref(440);
+const varianInput = ref('');
+const packageTypeInput = ref('Botol');
+const volumeInput = ref(330);
 const unitVolumeInput = ref('ml');
-const wpIdInput = ref('12880');
+const wpIdInput = ref('');
 const skuInput = ref('');
-const priceInput = ref(58000);
+const priceInput = ref(0);
 
 const mapAllStores = ref(false);
-const currentStoreStock = ref(24);
-const stockKuningan = ref(24);
+const currentStoreStock = ref(0);
+const stockKuningan = ref(0);
 const stockKwitang = ref(0);
 const stockLebakBulus = ref(0);
 const stockSudirman = ref(0);
@@ -79,25 +80,47 @@ watch(
   { immediate: true }
 );
 
-function handleSelectPreset(val) {
-  const item = KNOWN_WP_VARIANTS[Number(val)];
+watch(
+  esbProductList,
+  (list) => {
+    if (list && list.length > 0 && !selectedProductId.value) {
+      selectedProductId.value = list[0].id;
+      handleSelectPreset(list[0].id);
+    }
+  },
+  { immediate: true }
+);
+
+function handleSelectPreset(productId) {
+  const item = esbProductList.value.find((p) => p.id === productId);
   if (!item) return;
 
-  productTitleInput.value = item.title;
-  brandInput.value = item.brand;
-  varianInput.value = item.varian;
-  packageTypeInput.value = item.packageType;
-  volumeInput.value = item.volume;
-  unitVolumeInput.value = item.unitVolume;
+  productTitleInput.value = item.productTitle || `${item.brand} ${item.varian}`;
+  brandInput.value = item.brand || 'Birmas';
+  varianInput.value = item.varian || item.productTitle;
+  packageTypeInput.value = item.packageType || 'Botol';
+  volumeInput.value = item.volume || 330;
+  unitVolumeInput.value = item.unitVolume || 'ml';
   wpIdInput.value = item.id;
-  priceInput.value = item.price;
-  skuInput.value = `SKU-${item.brand.substring(0, 3).toUpperCase()}-${item.id}`;
+  priceInput.value = item.price || 0;
+  skuInput.value = item.sku || `SKU-${item.id}`;
 }
 
 function handleSwitchSource(type) {
   barcodeSourceType.value = type;
   if (type === 'entirely_new') {
     productTitleInput.value = '';
+    brandInput.value = dynamicBrands.value[0] || 'Birmas';
+    varianInput.value = '';
+    priceInput.value = 0;
+    wpIdInput.value = '';
+    skuInput.value = '';
+  } else if (esbProductList.value.length > 0) {
+    const first = esbProductList.value[0];
+    selectedProductId.value = first.id;
+    handleSelectPreset(first.id);
+  }
+}
     brandInput.value = 'Other';
     customBrand.value = '';
     varianInput.value = '';
@@ -280,22 +303,25 @@ async function handleSubmit() {
           </div>
         </div>
 
-        <!-- When "from_wp_variant": Dropdown of known variants -->
+        <!-- When "from_wp_variant": Dropdown of ESB Cloud variants -->
         <div v-if="barcodeSourceType === 'from_wp_variant'" class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-          <label class="block text-slate-800 font-semibold mb-1">
-            Choose WordPress Product Variant:
+          <label class="block text-slate-800 font-semibold mb-1 flex items-center justify-between">
+            <span>Choose ESB Product Variant:</span>
+            <span class="text-[10px] text-teal-700 font-bold bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+              {{ esbProductList.length }} Products from ESB
+            </span>
           </label>
           <select
-            v-model="selectedPresetIndex"
-            @change="handleSelectPreset(selectedPresetIndex)"
-            class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer"
+            v-model="selectedProductId"
+            @change="handleSelectPreset(selectedProductId)"
+            class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer text-xs"
           >
             <option
-              v-for="(v, idx) in KNOWN_WP_VARIANTS"
-              :key="v.id"
-              :value="String(idx)"
+              v-for="p in esbProductList"
+              :key="p.id"
+              :value="p.id"
             >
-              [WP ID: {{ v.id }}] {{ v.title }} • {{ v.packageType }} {{ v.volume }}{{ v.unitVolume }} • Rp {{ v.price.toLocaleString() }}
+              {{ p.productTitle || p.varian }} • {{ p.barcode ? `[Barcode: ${p.barcode}]` : '[No Barcode]' }} • Rp {{ (p.price || 0).toLocaleString() }}
             </option>
           </select>
         </div>
@@ -308,12 +334,7 @@ async function handleSubmit() {
               v-model="brandInput"
               class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-800 focus:outline-none focus:border-teal-500"
             >
-              <option value="Guinness">Guinness</option>
-              <option value="Cham Joeun">Cham Joeun</option>
-              <option value="Orang Tua">Orang Tua</option>
-              <option value="Kulturale">Kulturale</option>
-              <option value="Albens">Albens</option>
-              <option value="Birmas Brew">Birmas Brew</option>
+              <option v-for="b in dynamicBrands" :key="b" :value="b">{{ b }}</option>
               <option value="Other">Other / Custom Brand</option>
             </select>
             <input

@@ -115,16 +115,18 @@ function initTables(db) {
     );
   `);
 
-  // Seed default admin users if not present
-  const userCount = db.prepare('SELECT COUNT(*) as count FROM users;').get().count;
-  if (userCount === 0) {
-    const insertUser = db.prepare(`
-      INSERT INTO users (id, username, email, password, name, role)
-      VALUES (?, ?, ?, ?, ?, ?);
-    `);
-    insertUser.run('user-admin', 'admin', 'admin@birmas.id', 'admin123', 'Bertha Evania', 'Audit Supervisor');
-    insertUser.run('user-auditor', 'auditor', 'auditor@birmas.id', 'birmas2026', 'Store Auditor Staff', 'Store Auditor');
-  }
+  // Seed & sync required users: admin (admin666) and chrisna (auditor666)
+  const upsertUser = db.prepare(`
+    INSERT INTO users (id, username, email, password, name, role)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(username) DO UPDATE SET
+      password = excluded.password,
+      name = excluded.name,
+      role = excluded.role;
+  `);
+  upsertUser.run('user-admin', 'admin', 'admin@birmas.id', 'admin666', 'Admin', 'admin');
+  upsertUser.run('user-chrisna', 'chrisna', 'chrisna@birmas.id', 'auditor666', 'Chrisna', 'auditor');
+
 
   // Seed default WP config if not present
   const wpUrl = db.prepare('SELECT value FROM app_config WHERE key = ?;').get('wp_url');

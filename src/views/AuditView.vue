@@ -253,7 +253,7 @@ function exportAuditCSV() {
           @click="syncFromESBDirect"
           :disabled="isSyncing"
           type="button"
-          class="px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm"
+          class="px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm cursor-pointer"
           title="Direct live sync of real chiller stocks from ESB Cloud"
         >
           <RefreshCw class="w-3.5 h-3.5 text-teal-600" :class="isSyncing ? 'animate-spin' : ''" />
@@ -264,13 +264,36 @@ function exportAuditCSV() {
         <button
           @click="isCompleteModalOpen = true"
           type="button"
-          class="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-teal-600/20 transition-all"
+          class="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-teal-600/20 transition-all cursor-pointer"
         >
           <CheckCircle2 class="w-4 h-4" />
           <span>Complete Audit</span>
         </button>
       </div>
     </div>
+
+    <!-- Live Direct ESB Sync Status Banner -->
+    <transition enter-active-class="transition duration-300 ease-out" enter-from-class="opacity-0 -translate-y-2" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition duration-200 ease-in" leave-from-class="opacity-100 translate-y-0" leave-to-class="opacity-0 -translate-y-2">
+      <div
+        v-if="lastSyncStatus"
+        class="p-4 rounded-2xl flex items-center justify-between text-xs font-bold border shadow-sm transition-all"
+        :class="lastSyncStatus.success ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : 'bg-rose-50 border-rose-300 text-rose-900'"
+      >
+        <div class="flex items-center gap-2.5">
+          <CheckCircle2 v-if="lastSyncStatus.success" class="w-5 h-5 text-emerald-600 shrink-0" />
+          <AlertCircle v-else class="w-5 h-5 text-rose-600 shrink-0" />
+          <span class="text-sm font-semibold">{{ lastSyncStatus.message }}</span>
+        </div>
+        <button
+          @click="lastSyncStatus = null"
+          type="button"
+          class="p-1 rounded-lg hover:bg-black/5 text-slate-500 cursor-pointer"
+          title="Dismiss"
+        >
+          <X class="w-4 h-4" />
+        </button>
+      </div>
+    </transition>
 
     <!-- Counting Station (Light theme with tosca accents) -->
     <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm relative overflow-hidden">
@@ -598,10 +621,10 @@ function exportAuditCSV() {
             <button
               @click="openAddBarcodeWithPrefill()"
               type="button"
-              class="px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 border border-teal-300 text-teal-800 text-xs font-bold flex items-center gap-1.5 transition-colors"
+              class="px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 border border-teal-300 text-teal-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Plus class="w-3.5 h-3.5" />
-              <span>Map New Barcode</span>
+              <span>Add New Barcode</span>
             </button>
 
             <button

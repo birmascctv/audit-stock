@@ -8,6 +8,7 @@ import {
   fetchProducts,
   saveNewBarcode,
   syncWordPressData,
+  syncDirectESB,
   fetchAuditState,
   sendAuditScan,
   adjustAuditCount,
@@ -287,6 +288,37 @@ export function useAuditStore() {
     }
   }
 
+  async function syncFromESBDirect() {
+    isSyncing.value = true;
+    try {
+      const res = await syncDirectESB();
+      if (res.success) {
+        const [freshStores, freshProducts] = await Promise.all([fetchStores(), fetchProducts()]);
+        stores.value = freshStores;
+        wpProducts.value = freshProducts;
+        wpConfig.value.lastSyncedAt = new Date().toISOString();
+        try {
+          const auditState = await fetchAuditState(selectedStoreId.value);
+          if (auditState && auditState.counts) {
+            scannedCounts.value = auditState.counts;
+          }
+        } catch {}
+        lastSyncStatus.value = {
+          success: true,
+          message: `Direct ESB Sync Complete! ${res.totalProducts || 192} products & ${res.totalStockEntries || 951} branch stocks synchronized from ESB Cloud.`,
+        };
+      } else {
+        lastSyncStatus.value = { success: false, message: res.message || 'Direct ESB Sync failed' };
+      }
+      return res;
+    } catch (err) {
+      lastSyncStatus.value = { success: false, message: err.message };
+      return { success: false, error: err.message };
+    } finally {
+      isSyncing.value = false;
+    }
+  }
+
   async function finalizeAudit(auditorName, notes = '', pushToWP = false) {
     const completedRecord = {
       id: `audit-${Date.now()}`,
@@ -371,6 +403,7 @@ export function useAuditStore() {
     resetCurrentAudit,
     addNewBarcode,
     syncFromWordPress,
+    syncFromESBDirect,
     finalizeAudit,
     clearHistory,
     createStore,

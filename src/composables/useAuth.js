@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue';
 
-const AUTH_STORAGE_KEY = 'birmas_audit_user_v2';
+const AUTH_STORAGE_KEY = 'birmas_audit_session_v4';
 
 export const DEFAULT_ACCOUNTS = [
   {
@@ -21,12 +21,21 @@ export const DEFAULT_ACCOUNTS = [
   },
 ];
 
+// Clean legacy localStorage keys to ensure user is prompted to log in
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('birmas_audit_user_v2');
+    localStorage.removeItem('birmas_audit_user_v1');
+    localStorage.removeItem('birmas_audit_user');
+  } catch {}
+}
+
 const currentUser = ref(getStoredUser());
 
 function getStoredUser() {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    const raw = sessionStorage.getItem(AUTH_STORAGE_KEY);
     if (raw) {
       return JSON.parse(raw);
     }
@@ -54,7 +63,7 @@ export function useAuth() {
       if (res.ok && data.success && data.user) {
         currentUser.value = data.user;
         if (typeof window !== 'undefined') {
-          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
+          sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
         }
         return { success: true, message: data.message || 'Login successful', user: data.user };
       } else {
@@ -76,7 +85,7 @@ export function useAuth() {
       ) {
         currentUser.value = matched;
         if (typeof window !== 'undefined') {
-          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(matched));
+          sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(matched));
         }
         return { success: true, message: 'Logged in successfully', user: matched };
       }
@@ -87,7 +96,7 @@ export function useAuth() {
   function logout() {
     currentUser.value = null;
     if (typeof window !== 'undefined') {
-      localStorage.removeItem(AUTH_STORAGE_KEY);
+      sessionStorage.removeItem(AUTH_STORAGE_KEY);
     }
   }
 

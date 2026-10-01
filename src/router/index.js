@@ -6,7 +6,7 @@ import LoginView from '../views/LoginView.vue';
 const routes = [
   {
     path: '/',
-    redirect: '/audit',
+    redirect: '/login',
   },
   {
     path: '/audit',
@@ -15,7 +15,7 @@ const routes = [
   },
   {
     path: '/wordpress',
-    redirect: '/audit',
+    redirect: '/login',
   },
   {
     path: '/history',
@@ -29,13 +29,31 @@ const routes = [
   },
   {
     path: '/:pathMatch(.*)*',
-    redirect: '/audit',
+    redirect: '/login',
   },
 ];
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
+});
+
+router.beforeEach((to, from, next) => {
+  let isAuth = false;
+  try {
+    const session = sessionStorage.getItem('birmas_audit_session_v4');
+    isAuth = !!session;
+  } catch {
+    isAuth = false;
+  }
+
+  if (to.path !== '/login' && !isAuth) {
+    next('/login');
+  } else if (to.path === '/login' && isAuth) {
+    next('/audit');
+  } else {
+    next();
+  }
 });
 
 export default router;

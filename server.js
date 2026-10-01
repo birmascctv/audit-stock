@@ -379,23 +379,28 @@ async function startServer() {
   // 3. Add or match new barcode
   app.post('/api/products/match-barcode', (req, res) => {
     const payload = req.body;
-    if (!payload.barcode || !payload.brand || !payload.varian) {
-      return res.status(400).json({ error: 'Barcode, Brand, and Varian are required' });
+    if (!payload.barcode) {
+      return res.status(400).json({ error: 'Barcode is required' });
     }
 
     const cleanBarcode = payload.barcode.trim();
+    const all = db.getAllProducts();
+    const existing = (payload.productId || payload.wpId)
+      ? all.find(p => p.id === (payload.productId || payload.wpId))
+      : null;
+
     const productItem = {
-      id: payload.wpId || `wp-${Date.now()}`,
+      id: existing ? existing.id : (payload.wpId || `prod-${Date.now()}`),
       barcode: cleanBarcode,
-      sku: payload.sku || `SKU-${payload.brand.toUpperCase()}-${Date.now().toString().slice(-4)}`,
-      brand: payload.brand,
-      varian: payload.varian,
-      productTitle: payload.productTitle || `${payload.brand} ${payload.varian}`,
-      packageType: payload.packageType || 'Kaleng',
-      volume: payload.volume || 330,
-      unitVolume: payload.unitVolume || 'ml',
-      price: payload.price || 0,
-      stockByStore: payload.stockByStore || {},
+      sku: existing?.sku || payload.sku || `SKU-${Date.now().toString().slice(-4)}`,
+      brand: existing?.brand || payload.brand || 'Birmas',
+      varian: existing?.varian || payload.varian || cleanBarcode,
+      productTitle: existing?.productTitle || payload.productTitle || `${existing?.brand || payload.brand || 'Birmas'} ${existing?.varian || payload.varian || cleanBarcode}`,
+      packageType: existing?.packageType || payload.packageType || 'Botol',
+      volume: existing?.volume || payload.volume || 330,
+      unitVolume: existing?.unitVolume || payload.unitVolume || 'ml',
+      price: existing?.price !== undefined ? existing.price : (payload.price || 0),
+      stockByStore: existing?.stockByStore || payload.stockByStore || {},
       wpStatus: 'publish',
       lastUpdated: new Date().toISOString(),
     };
@@ -404,7 +409,7 @@ async function startServer() {
 
     res.json({
       success: true,
-      message: `Barcode ${cleanBarcode} saved successfully in SQLite for ${productItem.brand} ${productItem.varian}`,
+      message: `Barcode ${cleanBarcode} linked successfully to ${productItem.productTitle || productItem.varian}`,
       product: productItem,
     });
   });

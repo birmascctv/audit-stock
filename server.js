@@ -3,107 +3,12 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
+import * as db from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const DB_FILE = path.join(__dirname, 'data', 'audit_store.json');
-
-// Stores & Products (Populated dynamically from WordPress Pods)
-const DEFAULT_STORES = [];
-const DEFAULT_WP_PRODUCTS = [];
-
-const DEFAULT_WP_CONFIG = {
-  wpUrl: 'https://admin.birmas.id',
-  apiType: 'pods',
-  customEndpointPath: '/wp-json/api/v1/product_stocks?per_page=100',
-  variantEndpointPath: '/wp-json/api/v1/product_variants?per_page=100',
-  consumerKey: '',
-  consumerSecret: '',
-  isConnected: true,
-  lastSyncedAt: new Date().toISOString(),
-  selectedStoreId: 'birmas-kuningan',
-  autoSyncIntervalSeconds: 30,
-};
-
-const DEFAULT_USERS = [
-  {
-    id: 'user-admin',
-    username: 'admin',
-    email: 'admin@birmas.id',
-    password: 'admin123',
-    name: 'Bertha Evania',
-    role: 'Audit Supervisor',
-  },
-  {
-    id: 'user-auditor',
-    username: 'auditor',
-    email: 'auditor@birmas.id',
-    password: 'birmas2026',
-    name: 'Store Auditor Staff',
-    role: 'Store Auditor',
-  },
-];
-
-function ensureDataDirectory() {
-  const dir = path.dirname(DB_FILE);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
-
-function loadDatabase() {
-  ensureDataDirectory();
-  if (!fs.existsSync(DB_FILE)) {
-    const initialDb = {
-      stores: [],
-      wpConfig: DEFAULT_WP_CONFIG,
-      products: [],
-      auditState: {},
-      auditHistory: [],
-      users: DEFAULT_USERS,
-      lastSaved: new Date().toISOString(),
-    };
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), 'utf-8');
-    return initialDb;
-  }
-
-  try {
-    const raw = fs.readFileSync(DB_FILE, 'utf-8');
-    const parsed = JSON.parse(raw);
-    if (!parsed.stores) parsed.stores = [];
-    if (!parsed.products) parsed.products = [];
-    if (!parsed.wpConfig || parsed.wpConfig.wpUrl?.includes('demo-store.local') || !parsed.wpConfig.wpUrl) {
-      parsed.wpConfig = DEFAULT_WP_CONFIG;
-    }
-    if (!parsed.auditState) parsed.auditState = {};
-    if (!parsed.auditHistory) parsed.auditHistory = [];
-    if (!parsed.users || parsed.users.length === 0) parsed.users = DEFAULT_USERS;
-    return parsed;
-  } catch (err) {
-    console.error('Error reading DB_FILE, rebuilding defaults:', err);
-    return {
-      stores: [],
-      wpConfig: DEFAULT_WP_CONFIG,
-      products: [],
-      auditState: {},
-      auditHistory: [],
-      users: DEFAULT_USERS,
-      lastSaved: new Date().toISOString(),
-    };
-  }
-}
-
-function saveDatabase(db) {
-  try {
-    ensureDataDirectory();
-    db.lastSaved = new Date().toISOString();
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Failed to save to DB_FILE:', err);
-  }
-}
 
 // Helper to extract string or value from Pods field
 function extractField(f) {
@@ -133,18 +38,18 @@ async function fetchPodsEndpoint(url, path, headers) {
   }
 }
 
-// Background sync runner: syncs store locations and product_stocks Pod
-async function runBackgroundWordPressSync(db) {
-  const url = db.wpConfig?.wpUrl || 'https://admin.birmas.id';
+// Background sync runner: syncs store locations and product_stocks Pod directly into SQLite tables
+export async function runBackgroundWordPressSync() {
+  const wpConfig = db.getWpConfig();
+  const url = wpConfig.wpUrl || 'https://admin.birmas.id';
   if (!url || url.includes('demo-store.local')) return;
 
   const headers = {
     'Accept': 'application/json',
-    ...(db.wpConfig.appPassword ? { 'Authorization': `Basic ${Buffer.from(db.wpConfig.appPassword).toString('base64')}` } : {}),
   };
 
   try {
-    // 1. Fetch Locations pod if available to populate store list
+    // 1. Fetch Locations pod if available to populate SQLite stores table
     const locationsData = await fetchPodsEndpoint(url, '/wp-json/api/v1/locations?per_page=100', headers)
       || await fetchPodsEndpoint(url, '/wp-json/api/v1/location?per_page=100', headers)
       || await fetchPodsEndpoint(url, '/wp-json/api/v1/locations', headers);
@@ -152,21 +57,15 @@ async function runBackgroundWordPressSync(db) {
     if (locationsData && locationsData.length > 0) {
       for (const loc of locationsData) {
         const storeId = loc.post_name || `birmas-${(loc.outlet_code || loc.post_title || 'store').toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-        let existingStore = db.stores.find(s => s.id === storeId || (loc.ID && s.wpId === loc.ID) || s.name.toLowerCase() === (loc.post_title || '').toLowerCase());
-        if (!existingStore) {
-          db.stores.push({
-            id: storeId,
-            wpId: loc.ID,
-            name: loc.post_title || 'Birmas Location',
-            locationCode: loc.outlet_code ? `BRM-${loc.outlet_code.toUpperCase()}` : `BRM-${storeId.slice(-3).toUpperCase()}`,
-            esbBranchCode: loc.branch_code_esb || '',
-          });
-          if (!db.auditState[storeId]) {
-            db.auditState[storeId] = { counts: {}, scanLogs: [] };
-          }
-        }
+        db.saveStore({
+          id: storeId,
+          wpId: loc.ID,
+          name: loc.post_title || 'Birmas Location',
+          locationCode: loc.outlet_code ? `BRM-${loc.outlet_code.toUpperCase()}` : `BRM-${storeId.slice(-3).toUpperCase()}`,
+          esbBranchCode: loc.branch_code_esb || '',
+        });
       }
-      console.log(`[WordPress Pods Sync] Synchronized ${db.stores.length} store locations from WordPress`);
+      console.log(`[WordPress Pods Sync] Synchronized store locations into SQLite stores table.`);
     }
 
     // 2. Fetch Product Stocks Pod (contains both product variant details & stock per location)
@@ -177,29 +76,22 @@ async function runBackgroundWordPressSync(db) {
     if (stocksData && stocksData.length > 0) {
       let updatedCount = 0;
       for (const item of stocksData) {
-        // Resolve Location from Pods & auto-register store if not yet in db.stores
-        let targetStore = null;
+        // Resolve Location from Pods & auto-register into SQLite stores table
+        let targetStoreId = '';
         if (Array.isArray(item.location) && item.location.length > 0) {
           const locObj = item.location[0];
-          const storeId = locObj.post_name || `birmas-${(locObj.outlet_code || locObj.post_title || 'branch').toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-          targetStore = db.stores.find((s) => s.id === storeId || (locObj.ID && s.wpId === locObj.ID) || s.name.toLowerCase() === (locObj.post_title || '').toLowerCase());
-          
-          if (!targetStore) {
-            targetStore = {
-              id: storeId,
-              wpId: locObj.ID,
-              name: locObj.post_title || 'Birmas Branch',
-              locationCode: locObj.outlet_code ? `BRM-${locObj.outlet_code.toUpperCase()}` : `BRM-${storeId.slice(-3).toUpperCase()}`,
-              esbBranchCode: locObj.branch_code_esb || '',
-            };
-            db.stores.push(targetStore);
-            if (!db.auditState[storeId]) {
-              db.auditState[storeId] = { counts: {}, scanLogs: [] };
-            }
-          }
+          targetStoreId = locObj.post_name || `birmas-${(locObj.outlet_code || locObj.post_title || 'branch').toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+          db.saveStore({
+            id: targetStoreId,
+            wpId: locObj.ID,
+            name: locObj.post_title || 'Birmas Branch',
+            locationCode: locObj.outlet_code ? `BRM-${locObj.outlet_code.toUpperCase()}` : `BRM-${targetStoreId.slice(-3).toUpperCase()}`,
+            esbBranchCode: locObj.branch_code_esb || '',
+          });
         }
 
-        const storeId = targetStore ? targetStore.id : (db.stores[0]?.id || db.wpConfig.selectedStoreId || 'birmas-sudirman');
+        const stores = db.getAllStores();
+        const storeId = targetStoreId || (stores[0]?.id || 'birmas-sudirman');
 
         // Resolve Variant & Product Details
         let variantObj = null;
@@ -229,39 +121,12 @@ async function runBackgroundWordPressSync(db) {
           stockVal = Number(item.stock ?? item.stock_qty ?? item.quantity ?? item.qty ?? item.meta?.stock ?? 0);
         }
 
-        // Find existing product by ID, barcode, SKU, or Title
-        let existing = null;
-        if (variantId) {
-          existing = db.products.find((p) => p.id === variantId);
-        }
-        if (!existing && barcode) {
-          existing = db.products.find((p) => p.barcode === barcode);
-        }
-        if (!existing && sku) {
-          existing = db.products.find((p) => p.sku === sku);
-        }
-        if (!existing && productTitle) {
-          const tLower = productTitle.toLowerCase();
-          existing = db.products.find((p) =>
-            p.productTitle.toLowerCase() === tLower ||
-            tLower.includes(p.varian.toLowerCase()) ||
-            p.productTitle.toLowerCase().includes(tLower)
-          );
-        }
-
-        if (existing) {
-          if (!existing.stockByStore) existing.stockByStore = {};
-          existing.stockByStore[storeId] = stockVal;
-          if (barcode && !existing.barcode) existing.barcode = barcode;
-          if (sku && !existing.sku) existing.sku = sku;
-          if (price && !existing.price) existing.price = price;
-          existing.lastUpdated = new Date().toISOString();
-          updatedCount++;
-        } else if (productTitle || barcode) {
-          const newProd = {
-            id: variantId || `wp-${item.id || Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-            barcode: barcode || `BC-${Date.now().toString().slice(-6)}`,
-            sku: sku || `SKU-${Date.now().toString().slice(-4)}`,
+        if (variantId || productTitle || barcode) {
+          const prodId = variantId || `wp-${item.id || Date.now()}`;
+          db.saveProduct({
+            id: prodId,
+            barcode: barcode || null,
+            sku: sku || null,
             brand: brand,
             varian: variantName !== 'Standard' ? variantName : productTitle,
             productTitle: productTitle,
@@ -269,25 +134,22 @@ async function runBackgroundWordPressSync(db) {
             volume: volume,
             unitVolume: unitVolume,
             price: price,
-            stockByStore: {
-              [storeId]: stockVal,
-            },
             wpStatus: 'publish',
             lastUpdated: new Date().toISOString(),
-            source: 'wordpress_pods',
-          };
-          db.products.push(newProd);
+          });
+
+          // Save stock quantity for this store in SQLite store_stocks table
+          if (storeId) {
+            db.setProductStock(storeId, prodId, stockVal);
+          }
           updatedCount++;
         }
       }
 
-      if (db.stores.length > 0 && (!db.wpConfig.selectedStoreId || !db.stores.find(s => s.id === db.wpConfig.selectedStoreId))) {
-        db.wpConfig.selectedStoreId = db.stores[0].id;
-      }
-
-      db.wpConfig.lastSyncedAt = new Date().toISOString();
-      saveDatabase(db);
-      console.log(`[WordPress Pods Sync] Synced ${stocksData.length} stock items across ${db.stores.length} store locations. Saved to DB.`);
+      db.setConfig('last_synced_at', new Date().toISOString());
+      const allStores = db.getAllStores();
+      const allProducts = db.getAllProducts();
+      console.log(`[WordPress Pods Sync] Synced ${updatedCount} stock items across ${allStores.length} store locations in SQLite.`);
     }
   } catch (err) {
     console.warn('[WordPress Pods Sync] Error:', err.message);
@@ -298,16 +160,17 @@ async function startServer() {
   const app = express();
   app.use(express.json());
 
-  const db = loadDatabase();
+  // Ensure SQLite tables are initialized
+  db.getDb();
 
   // Background Auto-Checker (runs every 30 seconds)
   setInterval(() => {
-    runBackgroundWordPressSync(db);
+    runBackgroundWordPressSync();
   }, 30000);
 
   // 1. Stores API
   app.get('/api/stores', (req, res) => {
-    res.json(db.stores);
+    res.json(db.getAllStores());
   });
 
   app.post('/api/stores', (req, res) => {
@@ -322,24 +185,19 @@ async function startServer() {
       locationCode: locationCode || `BRM-${id.substring(7, 10).toUpperCase()}`,
       esbBranchCode: esbBranchCode || `ESB_${id.substring(7, 10).toUpperCase()}`,
     };
-    db.stores.push(newStore);
-    if (!db.auditState[id]) {
-      db.auditState[id] = { counts: {}, scanLogs: [] };
-    }
-    saveDatabase(db);
-    res.json({ success: true, store: newStore, stores: db.stores });
+    db.saveStore(newStore);
+    res.json({ success: true, store: newStore, stores: db.getAllStores() });
   });
 
   app.delete('/api/stores/:id', (req, res) => {
     const { id } = req.params;
-    db.stores = db.stores.filter((s) => s.id !== id);
-    saveDatabase(db);
-    res.json({ success: true, stores: db.stores });
+    db.deleteStore(id);
+    res.json({ success: true, stores: db.getAllStores() });
   });
 
   // 2. Products API
   app.get('/api/products', (req, res) => {
-    res.json(db.products);
+    res.json(db.getAllProducts());
   });
 
   // 3. Add or match new barcode
@@ -350,8 +208,6 @@ async function startServer() {
     }
 
     const cleanBarcode = payload.barcode.trim();
-    const existingIndex = db.products.findIndex((p) => p.barcode === cleanBarcode);
-
     const productItem = {
       id: payload.wpId || `wp-${Date.now()}`,
       barcode: cleanBarcode,
@@ -363,67 +219,63 @@ async function startServer() {
       volume: payload.volume || 330,
       unitVolume: payload.unitVolume || 'ml',
       price: payload.price || 0,
-      stockByStore: payload.stockByStore || {
-        'birmas-kuningan': 0,
-        'birmas-kwitang': 0,
-        'birmas-lebak-bulus': 0,
-        'birmas-sudirman': 0,
-      },
+      stockByStore: payload.stockByStore || {},
       wpStatus: 'publish',
       lastUpdated: new Date().toISOString(),
-      source: payload.wpId ? 'wordpress' : 'manual',
     };
 
-    if (existingIndex >= 0) {
-      db.products[existingIndex] = productItem;
-    } else {
-      db.products.push(productItem);
-    }
+    db.saveProduct(productItem);
 
-    saveDatabase(db);
     res.json({
       success: true,
-      message: `Barcode ${cleanBarcode} saved successfully for ${productItem.brand} ${productItem.varian}`,
+      message: `Barcode ${cleanBarcode} saved successfully in SQLite for ${productItem.brand} ${productItem.varian}`,
       product: productItem,
     });
   });
 
   app.delete('/api/products/match-barcode/:barcode', (req, res) => {
     const { barcode } = req.params;
-    db.products = db.products.filter((p) => p.barcode !== barcode);
-    saveDatabase(db);
-    res.json({ success: true, message: `Barcode ${barcode} removed` });
+    const all = db.getAllProducts();
+    const prod = all.find(p => p.barcode === barcode);
+    if (prod) {
+      const sqliteDb = db.getDb();
+      sqliteDb.prepare('DELETE FROM products WHERE id = ?;').run(prod.id);
+      sqliteDb.prepare('DELETE FROM store_stocks WHERE product_id = ?;').run(prod.id);
+    }
+    res.json({ success: true, message: `Barcode ${barcode} removed from SQLite` });
   });
 
   // 4. Audit State per store
   app.get('/api/audit/state', (req, res) => {
-    const storeId = (req.query.storeId) || 'birmas-kuningan';
-    if (!db.auditState[storeId]) {
-      db.auditState[storeId] = { counts: {}, scanLogs: [] };
-      saveDatabase(db);
+    const stores = db.getAllStores();
+    const storeId = (req.query.storeId) || (stores[0]?.id || 'birmas-sudirman');
+    const scans = db.getScansByStore(storeId);
+    
+    // Calculate counts per barcode
+    const counts = {};
+    for (const s of scans) {
+      counts[s.barcode] = (counts[s.barcode] || 0) + 1;
     }
-    const state = db.auditState[storeId];
+
     res.json({
       storeId,
-      counts: state.counts,
-      scanLogs: state.scanLogs,
-      totalScans: Object.values(state.counts).reduce((a, b) => a + b, 0),
+      counts,
+      scanLogs: scans,
+      totalScans: scans.length,
     });
   });
 
   // 5. Send physical scan
   app.post('/api/audit/scan', (req, res) => {
-    const { barcode, storeId = 'birmas-kuningan', auditorName = 'Auditor' } = req.body;
+    const stores = db.getAllStores();
+    const { barcode, storeId = (stores[0]?.id || 'birmas-sudirman'), auditorName = 'Auditor' } = req.body;
     if (!barcode) {
       return res.status(400).json({ error: 'Barcode is required' });
     }
 
     const clean = barcode.trim();
-    const product = db.products.find((p) => p.barcode === clean);
-
-    if (!db.auditState[storeId]) {
-      db.auditState[storeId] = { counts: {}, scanLogs: [] };
-    }
+    const products = db.getAllProducts();
+    const product = products.find((p) => p.barcode === clean);
 
     if (!product) {
       return res.status(404).json({
@@ -433,9 +285,9 @@ async function startServer() {
       });
     }
 
-    const currentCount = db.auditState[storeId].counts[clean] || 0;
+    const scans = db.getScansByStore(storeId);
+    const currentCount = scans.filter(s => s.barcode === clean).length;
     const newCount = currentCount + 1;
-    db.auditState[storeId].counts[clean] = newCount;
 
     const scanEvent = {
       id: `scan-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -447,9 +299,8 @@ async function startServer() {
       storeId,
       auditorName,
     };
-    db.auditState[storeId].scanLogs.unshift(scanEvent);
 
-    saveDatabase(db);
+    db.saveScan(scanEvent);
 
     const wpExpected = (product.stockByStore && product.stockByStore[storeId]) ?? 0;
     const discrepancy = newCount - wpExpected;
@@ -468,31 +319,51 @@ async function startServer() {
 
   // 6. Manual Adjust Count
   app.post('/api/audit/adjust', (req, res) => {
-    const { barcode, storeId = 'birmas-kuningan', count, delta } = req.body;
+    const { barcode, storeId = 'birmas-sudirman', count, delta } = req.body;
     if (!barcode) return res.status(400).json({ error: 'Barcode required' });
 
-    if (!db.auditState[storeId]) {
-      db.auditState[storeId] = { counts: {}, scanLogs: [] };
-    }
-
-    const current = db.auditState[storeId].counts[barcode] || 0;
-    let nextCount = current;
+    const scans = db.getScansByStore(storeId);
+    const barcodeScans = scans.filter(s => s.barcode === barcode);
+    const current = barcodeScans.length;
+    
+    let targetCount = current;
     if (typeof count === 'number') {
-      nextCount = Math.max(0, count);
+      targetCount = Math.max(0, count);
     } else if (typeof delta === 'number') {
-      nextCount = Math.max(0, current + delta);
+      targetCount = Math.max(0, current + delta);
     }
 
-    db.auditState[storeId].counts[barcode] = nextCount;
-    saveDatabase(db);
-    res.json({ success: true, count: nextCount });
+    if (targetCount > current) {
+      const diff = targetCount - current;
+      const products = db.getAllProducts();
+      const product = products.find(p => p.barcode === barcode);
+      for (let i = 0; i < diff; i++) {
+        db.saveScan({
+          storeId,
+          barcode,
+          brand: product?.brand || '',
+          varian: product?.varian || '',
+          scanSequence: current + i + 1,
+          auditorName: 'Adjusted',
+        });
+      }
+    } else if (targetCount < current) {
+      const sqliteDb = db.getDb();
+      const toDelete = current - targetCount;
+      const scanIdsToDelete = barcodeScans.slice(0, toDelete).map(s => `'${s.id}'`).join(',');
+      if (scanIdsToDelete) {
+        sqliteDb.exec(`DELETE FROM audit_scans WHERE id IN (${scanIdsToDelete});`);
+      }
+    }
+
+    res.json({ success: true, count: targetCount });
   });
 
   // 7. Reset audit for store
   app.post('/api/audit/reset', (req, res) => {
-    const { storeId = 'birmas-kuningan' } = req.body;
-    db.auditState[storeId] = { counts: {}, scanLogs: [] };
-    saveDatabase(db);
+    const stores = db.getAllStores();
+    const { storeId = (stores[0]?.id || 'birmas-sudirman') } = req.body;
+    db.clearScansByStore(storeId);
     res.json({ success: true, message: `Physical count reset for ${storeId}` });
   });
 
@@ -506,72 +377,68 @@ async function startServer() {
       storeId: audit.storeId,
       storeName: audit.storeName || 'Birmas Store',
       auditorName: audit.auditorName || 'Auditor',
-      startedAt: audit.startedAt || new Date().toISOString(),
+      timestamp: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      totalExpected: audit.totalExpected || 0,
-      totalScanned: audit.totalScanned || 0,
-      matchedCount: audit.matchedCount || 0,
-      missingCount: audit.missingCount || 0,
-      surplusCount: audit.surplusCount || 0,
-      items: audit.items || [],
-      pushedToWordPress: Boolean(audit.pushedToWordPress),
-      notes: audit.notes || '',
+      totalItems: audit.totalScanned || 0,
+      varianceCount: audit.missingCount || 0,
+      accuracy: audit.accuracy || 100,
+      records: audit.items || [],
     };
 
-    db.auditHistory.unshift(auditRecord);
+    db.saveAuditHistoryRecord(auditRecord);
 
+    // Update stock in SQLite if pushed
     if (audit.pushedToWordPress && audit.items) {
+      const allProducts = db.getAllProducts();
       audit.items.forEach((item) => {
-        const prod = db.products.find((p) => p.barcode === item.barcode);
-        if (prod && prod.stockByStore) {
-          prod.stockByStore[audit.storeId] = item.scannedCount;
+        const prod = allProducts.find((p) => p.barcode === item.barcode);
+        if (prod) {
+          db.setProductStock(audit.storeId, prod.id, item.scannedCount);
         }
       });
     }
 
-    db.auditState[audit.storeId] = { counts: {}, scanLogs: [] };
-    saveDatabase(db);
+    // Clear active scans for this store
+    db.clearScansByStore(audit.storeId);
 
     res.json({
       success: true,
-      message: 'Audit signed off and persisted',
+      message: 'Audit signed off and persisted in SQLite history',
       audit: auditRecord,
     });
   });
 
   // 9. Audit History
   app.get('/api/audit/history', (req, res) => {
-    res.json(db.auditHistory);
+    res.json(db.getAllAuditHistory());
   });
 
   app.delete('/api/audit/history', (req, res) => {
-    db.auditHistory = [];
-    saveDatabase(db);
-    res.json({ success: true, message: 'Audit history cleared' });
+    const sqliteDb = db.getDb();
+    sqliteDb.exec('DELETE FROM audit_history;');
+    res.json({ success: true, message: 'Audit history cleared in SQLite' });
   });
 
   // 10. WordPress / ESB Config
   app.get('/api/wordpress/config', (req, res) => {
-    res.json(db.wpConfig);
+    res.json(db.getWpConfig());
   });
 
   app.post('/api/wordpress/config', (req, res) => {
-    db.wpConfig = { ...db.wpConfig, ...req.body };
-    saveDatabase(db);
-    res.json({ success: true, config: db.wpConfig });
+    if (req.body.wpUrl) db.setConfig('wp_url', req.body.wpUrl);
+    if (req.body.customEndpointPath) db.setConfig('custom_endpoint_path', req.body.customEndpointPath);
+    if (req.body.selectedStoreId) db.setConfig('selected_store_id', req.body.selectedStoreId);
+    res.json({ success: true, config: db.getWpConfig() });
   });
 
   // 11. Sync WordPress data
   app.post('/api/wordpress/sync', async (req, res) => {
     try {
-      if (req.body && Object.keys(req.body).length > 0) {
-        db.wpConfig = { ...db.wpConfig, ...req.body };
-      }
-      await runBackgroundWordPressSync(db);
+      await runBackgroundWordPressSync();
       res.json({
         success: true,
-        message: 'Synchronized with WordPress Pods & ESB',
-        data: db.products,
+        message: 'Synchronized with WordPress Pods into SQLite tables',
+        data: db.getAllProducts(),
       });
     } catch (err) {
       res.status(500).json({ success: false, message: err.message });
@@ -584,15 +451,15 @@ async function startServer() {
     console.log('[ESB Webhook Received]:', req.body);
 
     if (variant_title) {
+      const stores = db.getAllStores();
       const locKey = (location || '').toLowerCase();
-      const targetStore = db.stores.find((s) => s.id === locKey || s.locationCode.toLowerCase() === locKey || s.name.toLowerCase().includes(locKey));
-      const storeId = targetStore ? targetStore.id : 'birmas-kuningan';
+      const targetStore = stores.find((s) => s.id === locKey || s.locationCode?.toLowerCase() === locKey || s.name.toLowerCase().includes(locKey));
+      const storeId = targetStore ? targetStore.id : (stores[0]?.id || 'birmas-sudirman');
 
-      const existing = db.products.find((p) => p.varian.toLowerCase() === variant_title.toLowerCase() || p.productTitle === variant_title);
+      const products = db.getAllProducts();
+      const existing = products.find((p) => p.varian?.toLowerCase() === variant_title.toLowerCase() || p.productTitle === variant_title);
       if (existing) {
-        existing.stockByStore[storeId] = Number(stock) || 0;
-        existing.lastUpdated = new Date().toISOString();
-        saveDatabase(db);
+        db.setProductStock(storeId, existing.id, Number(stock) || 0);
       }
     }
 
@@ -607,7 +474,7 @@ async function startServer() {
     }
 
     const cleanUser = username.trim().toLowerCase();
-    const user = db.users.find((u) => u.username.toLowerCase() === cleanUser || u.email.toLowerCase() === cleanUser);
+    const user = db.getUserByUsername(cleanUser);
 
     if (!user || user.password !== password) {
       return res.status(401).json({ success: false, message: 'Invalid username or password' });
@@ -619,15 +486,21 @@ async function startServer() {
 
   // 14. Database health & system status
   app.get('/api/database/status', (req, res) => {
-    const stats = fs.existsSync(DB_FILE) ? fs.statSync(DB_FILE) : null;
+    const dbPath = path.join(__dirname, 'data', 'birmas_audit.sqlite');
+    const stats = fs.existsSync(dbPath) ? fs.statSync(dbPath) : null;
+    const stores = db.getAllStores();
+    const products = db.getAllProducts();
+    const history = db.getAllAuditHistory();
+
     res.json({
       status: 'healthy',
-      dbFile: DB_FILE,
+      engine: 'SQLite (Relational Tables)',
+      dbFile: dbPath,
       fileSizeKB: stats ? Math.round(stats.size / 1024) : 0,
-      totalProducts: db.products.length,
-      totalStores: db.stores.length,
-      totalAuditsArchived: db.auditHistory.length,
-      lastSaved: db.lastSaved,
+      totalProducts: products.length,
+      totalStores: stores.length,
+      totalAuditsArchived: history.length,
+      lastSaved: new Date().toISOString(),
       autoSyncEnabled: true,
       autoSyncIntervalSeconds: 30,
     });
@@ -648,19 +521,20 @@ async function startServer() {
     });
   }
 
-  // Initial sync immediately on server start
-  runBackgroundWordPressSync(db).catch(() => {});
+  // Initial sync on server start
+  runBackgroundWordPressSync().catch(() => {});
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Birmas Server] Running at http://localhost:${PORT}`);
+    console.log(`[Birmas Server] SQLite Tables Ready at http://localhost:${PORT}`);
   });
 }
 
 if (process.argv.includes('--sync')) {
-  console.log('[CLI] Connecting to https://admin.birmas.id to sync product_variants and product_stocks...');
-  const db = loadDatabase();
-  runBackgroundWordPressSync(db).then(() => {
-    console.log(`[CLI] Sync finished! Total products in catalog: ${db.products.length}, Stores: ${db.stores.length}`);
+  console.log('[CLI] Connecting to https://admin.birmas.id to sync product_stocks into SQLite tables...');
+  runBackgroundWordPressSync().then(() => {
+    const stores = db.getAllStores();
+    const products = db.getAllProducts();
+    console.log(`[CLI] Sync finished! Total products in SQLite: ${products.length}, Stores in SQLite: ${stores.length}`);
     process.exit(0);
   }).catch((err) => {
     console.error('[CLI] Sync failed:', err);

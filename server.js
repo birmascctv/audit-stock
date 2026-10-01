@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -41,16 +42,24 @@ async function fetchPodsEndpoint(url, path, headers) {
 // Background sync runner: syncs store locations and product_stocks Pod directly into SQLite tables
 export async function runBackgroundWordPressSync() {
   const wpConfig = db.getWpConfig();
-  const url = wpConfig.wpUrl || 'https://admin.birmas.id';
+  const url = process.env.WP_URL || wpConfig.wpUrl || 'https://admin.birmas.id';
   if (!url || url.includes('demo-store.local')) return;
+
+  const authHeader = process.env.WP_APP_PASSWORD
+    ? { 'Authorization': `Basic ${Buffer.from(process.env.WP_APP_PASSWORD).toString('base64')}` }
+    : {};
 
   const headers = {
     'Accept': 'application/json',
+    ...authHeader,
   };
+
+  const stocksEndpoint = process.env.WP_STOCKS_ENDPOINT || wpConfig.customEndpointPath || '/wp-json/api/v1/product_stocks?per_page=100';
+  const locationsEndpoint = process.env.WP_LOCATIONS_ENDPOINT || '/wp-json/api/v1/locations?per_page=100';
 
   try {
     // 1. Fetch Locations pod if available to populate SQLite stores table
-    const locationsData = await fetchPodsEndpoint(url, '/wp-json/api/v1/locations?per_page=100', headers)
+    const locationsData = await fetchPodsEndpoint(url, locationsEndpoint, headers)
       || await fetchPodsEndpoint(url, '/wp-json/api/v1/location?per_page=100', headers)
       || await fetchPodsEndpoint(url, '/wp-json/api/v1/locations', headers);
 
@@ -69,7 +78,7 @@ export async function runBackgroundWordPressSync() {
     }
 
     // 2. Fetch Product Stocks Pod (contains both product variant details & stock per location)
-    const stocksData = await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks?per_page=100', headers)
+    const stocksData = await fetchPodsEndpoint(url, stocksEndpoint, headers)
       || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks?per_page=50', headers)
       || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks', headers);
 

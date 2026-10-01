@@ -66,16 +66,28 @@ export async function runBackgroundWordPressSync() {
       ...authHeader,
     };
 
-    const stocksEndpoint = process.env.WP_STOCKS_ENDPOINT || wpConfig.customEndpointPath || '/wp-json/api/v1/product_stocks?per_page=100';
+    const rawEndpoint = (process.env.WP_STOCKS_ENDPOINT || wpConfig.customEndpointPath || '/wp-json/api/v1/product_stocks').split('?')[0];
+    const batchSize = parseInt(process.env.WP_BATCH_SIZE || '50', 10);
+    const maxPages = parseInt(process.env.WP_MAX_PAGES || '100', 10);
+    let currentPage = 1;
+    let totalSynced = 0;
 
-    // Fetch Product Stocks Pod (contains both product variant details & store locations in one call)
-    const stocksData = await fetchPodsEndpoint(url, stocksEndpoint, headers)
-      || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks?per_page=50', headers)
-      || await fetchPodsEndpoint(url, '/wp-json/api/v1/product_stocks', headers);
+    console.log(`[WordPress Pods Sync] Starting safe pagination sync (${batchSize} items per page)...`);
 
-    if (stocksData && stocksData.length > 0) {
-      let updatedCount = 0;
-      for (const item of stocksData) {
+    while (currentPage <= maxPages) {
+      const pageUrl = `${rawEndpoint}?page=${currentPage}&per_page=${batchSize}`;
+      const pageData = await fetchPodsEndpoint(url, pageUrl, headers);
+
+      if (!pageData || !Array.isArray(pageData) || pageData.length === 0) {
+        if (currentPage === 1) {
+          console.warn('[WordPress Pods Sync] First page returned no items or error.');
+        } else {
+          console.log(`[WordPress Pods Sync] Reached end of catalog at page ${currentPage - 1}.`);
+        }
+        break;
+      }
+
+      for (const item of pageData) {
         // Resolve Location from Pods & auto-register into SQLite stores table
         let targetStoreId = '';
         if (Array.isArray(item.location) && item.location.length > 0) {
@@ -142,15 +154,26 @@ export async function runBackgroundWordPressSync() {
           if (storeId) {
             db.setProductStock(storeId, prodId, stockVal);
           }
-          updatedCount++;
         }
       }
 
-      db.setConfig('last_synced_at', new Date().toISOString());
-      const allStores = db.getAllStores();
-      const allProducts = db.getAllProducts();
-      console.log(`[WordPress Pods Sync] Synced ${updatedCount} stock items across ${allStores.length} store locations in SQLite.`);
+      totalSynced += pageData.length;
+      console.log(`[WordPress Pods Sync] Page ${currentPage} synced (${pageData.length} items, total so far: ${totalSynced})`);
+
+      // If page had fewer items than batchSize, we have reached the end
+      if (pageData.length < batchSize) {
+        break;
+      }
+
+      currentPage++;
+      // Polite 400ms pause between batches to keep server CPU low
+      await new Promise((resolve) => setTimeout(resolve, 400));
     }
+
+    db.setConfig('last_synced_at', new Date().toISOString());
+    const allStores = db.getAllStores();
+    const allProducts = db.getAllProducts();
+    console.log(`[WordPress Pods Sync] Sync completed successfully! Total products in SQLite: ${allProducts.length}, Stores: ${allStores.length}`);
   } catch (err) {
     console.warn('[WordPress Pods Sync] Error:', err.message);
   } finally {

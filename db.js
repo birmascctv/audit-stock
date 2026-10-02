@@ -45,6 +45,9 @@ function initTables(db) {
       brand TEXT,
       varian TEXT,
       product_title TEXT,
+      category TEXT,
+      sub_category TEXT,
+      default_unit TEXT,
       package_type TEXT,
       volume REAL,
       unit_volume TEXT,
@@ -54,16 +57,28 @@ function initTables(db) {
     );
   `);
 
+  // Migrate additional columns for existing tables
+  try { db.exec(`ALTER TABLE products ADD COLUMN category TEXT;`); } catch (_) {}
+  try { db.exec(`ALTER TABLE products ADD COLUMN sub_category TEXT;`); } catch (_) {}
+  try { db.exec(`ALTER TABLE products ADD COLUMN default_unit TEXT;`); } catch (_) {}
+
   // 3. Store Stocks Table (relation between store and product)
   db.exec(`
     CREATE TABLE IF NOT EXISTS store_stocks (
       store_id TEXT NOT NULL,
       product_id TEXT NOT NULL,
       stock_qty REAL DEFAULT 0,
+      available_qty REAL DEFAULT 0,
+      booked_qty REAL DEFAULT 0,
+      stock_value REAL DEFAULT 0,
       last_synced TEXT,
       PRIMARY KEY (store_id, product_id)
     );
   `);
+
+  try { db.exec(`ALTER TABLE store_stocks ADD COLUMN available_qty REAL DEFAULT 0;`); } catch (_) {}
+  try { db.exec(`ALTER TABLE store_stocks ADD COLUMN booked_qty REAL DEFAULT 0;`); } catch (_) {}
+  try { db.exec(`ALTER TABLE store_stocks ADD COLUMN stock_value REAL DEFAULT 0;`); } catch (_) {}
 
   // 4. Audit Scans Table (live audit station scans)
   db.exec(`
@@ -224,6 +239,9 @@ export function getAllProducts() {
     SELECT 
       id, barcode, sku, brand, varian, 
       product_title as productTitle, 
+      category,
+      sub_category as subCategory,
+      default_unit as defaultUnit,
       package_type as packageType, 
       volume, unit_volume as unitVolume, 
       price, wp_status as wpStatus, 
@@ -250,14 +268,17 @@ export function saveProduct(product) {
   const db = getDb();
   const stmt = db.prepare(`
     INSERT INTO products (
-      id, barcode, sku, brand, varian, product_title, package_type, volume, unit_volume, price, wp_status, last_updated
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, barcode, sku, brand, varian, product_title, category, sub_category, default_unit, package_type, volume, unit_volume, price, wp_status, last_updated
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       barcode = coalesce(excluded.barcode, products.barcode),
       sku = coalesce(excluded.sku, products.sku),
       brand = excluded.brand,
       varian = excluded.varian,
       product_title = excluded.product_title,
+      category = coalesce(excluded.category, products.category),
+      sub_category = coalesce(excluded.sub_category, products.sub_category),
+      default_unit = coalesce(excluded.default_unit, products.default_unit),
       package_type = excluded.package_type,
       volume = excluded.volume,
       unit_volume = excluded.unit_volume,
@@ -273,6 +294,9 @@ export function saveProduct(product) {
     product.brand,
     product.varian,
     product.productTitle || `${product.brand} ${product.varian}`,
+    product.category || null,
+    product.subCategory || null,
+    product.defaultUnit || null,
     product.packageType || 'Kaleng',
     product.volume ?? 330,
     product.unitVolume || 'ml',

@@ -807,16 +807,17 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Birmas Server] SQLite Tables Ready at http://localhost:${PORT}`);
-    // Run initial ESB sync after 3 seconds, then every 10 minutes
+    // Run initial My ESB ERP Stock sync for all 4 stores after 3 seconds, then automatically every 15 minutes
     setTimeout(() => {
-      runDirectESBSync().catch((e) => console.warn('[Initial ESB Sync Error]:', e.message));
+      console.log('[Backend Startup] Automatically syncing real inventory stock for all 4 Birmas stores from My ESB ERP...');
+      runDirectESBERPSync({ storeId: 'all' }).catch((e) => console.warn('[Initial ERP Sync Error]:', e.message));
     }, 3000);
 
-    const ESB_AUTO_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+    const ERP_AUTO_SYNC_INTERVAL_MS = 15 * 60 * 1000; // Automatically every 15 minutes
     setInterval(() => {
-      console.log('[Auto-Sync] Running scheduled 10-minute background sync from ESB Cloud...');
-      runDirectESBSync().catch((e) => console.warn('[Periodic ESB Sync Error]:', e.message));
-    }, ESB_AUTO_SYNC_INTERVAL_MS);
+      console.log('[Auto-Sync] Running scheduled 15-minute background inventory sync for all 4 Birmas stores from My ESB ERP...');
+      runDirectESBERPSync({ storeId: 'all' }).catch((e) => console.warn('[Periodic ERP Sync Error]:', e.message));
+    }, ERP_AUTO_SYNC_INTERVAL_MS);
   });
 }
 

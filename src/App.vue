@@ -34,13 +34,8 @@ const isGuideOpen = ref(false);
     >
       <div class="max-w-[1560px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 flex flex-col sm:flex-row items-center justify-between gap-2">
         <p>
-          Birmas Store Stock Audit Station • Synchronized with WordPress & ESB Pods
+          Birmas Store Stock Audit Station • Synchronized with ESB Inventory
         </p>
-        <div class="flex items-center gap-3">
-          <button @click="isGuideOpen = true" class="text-teal-700 hover:underline font-medium">
-            Scanner Tips (EN / ID)
-          </button>
-        </div>
       </div>
     </footer>
 

@@ -170,15 +170,17 @@ export function useAuditStore() {
       const count = scannedCounts.value[prod.barcode] ?? 0;
       const discrepancy = count - wpExpected;
 
-      let status = 'pending';
-      if (count === 0 && wpExpected > 0) {
-        status = 'pending';
+      let status = 'unscanned';
+      if (count === 0 && wpExpected === 0) {
+        status = 'zero_stock';
+      } else if (count === 0 && wpExpected > 0) {
+        status = 'unscanned';
       } else if (count === wpExpected) {
         status = 'matched';
       } else if (count < wpExpected) {
-        status = 'missing';
+        status = 'missing'; // Shortage
       } else {
-        status = 'surplus';
+        status = 'surplus'; // Overcount
       }
 
       const lastLog = scanLogs.value.find((l) => l.barcode === prod.barcode);
@@ -186,7 +188,11 @@ export function useAuditStore() {
       return {
         barcode: prod.barcode,
         wpId: prod.id,
-        brand: prod.brand,
+        brand: prod.subCategory || prod.brand || 'Birmas',
+        subCategory: prod.subCategory || prod.brand || 'Birmas',
+        productTitle: prod.productTitle || prod.varian,
+        category: prod.category,
+        defaultUnit: prod.defaultUnit,
         varian: prod.varian,
         wpExpectedQty: wpExpected,
         scannedCount: count,
@@ -206,6 +212,11 @@ export function useAuditStore() {
     return auditItems.value.reduce((acc, item) => acc + item.scannedCount, 0);
   });
 
+  // Items that belong to this store (have expected stock or were scanned)
+  const storeItemsCount = computed(() => {
+    return auditItems.value.filter((i) => i.wpExpectedQty > 0 || i.scannedCount > 0).length;
+  });
+
   const matchedVariantsCount = computed(() => {
     return auditItems.value.filter((i) => i.status === 'matched').length;
   });
@@ -216,6 +227,10 @@ export function useAuditStore() {
 
   const surplusVariantsCount = computed(() => {
     return auditItems.value.filter((i) => i.status === 'surplus').length;
+  });
+
+  const unscannedVariantsCount = computed(() => {
+    return auditItems.value.filter((i) => i.status === 'unscanned').length;
   });
 
   const netDiscrepancyBottles = computed(() => {
@@ -468,9 +483,11 @@ export function useAuditStore() {
     lastSyncStatus,
     totalWpExpected,
     totalScanned,
+    storeItemsCount,
     matchedVariantsCount,
     missingVariantsCount,
     surplusVariantsCount,
+    unscannedVariantsCount,
     netDiscrepancyBottles,
     isAutoCheckerActive,
     lastCheckedAt,

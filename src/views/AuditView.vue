@@ -42,9 +42,11 @@ const {
   scanLogs,
   totalWpExpected,
   totalScanned,
+  storeItemsCount,
   matchedVariantsCount,
   missingVariantsCount,
   surplusVariantsCount,
+  unscannedVariantsCount,
   netDiscrepancyBottles,
   isAutoCheckerActive,
   lastCheckedAt,
@@ -135,30 +137,28 @@ const { scanFeedback, processBarcode } = useScanner({
 // All items in catalog filtered for the main comparison table
 const filteredItems = computed(() => {
   return auditItems.value.filter((item) => {
-    if (brandFilter.value !== 'ALL' && item.brand !== brandFilter.value) {
+    if (brandFilter.value !== 'ALL' && (item.subCategory !== brandFilter.value && item.brand !== brandFilter.value)) {
       return false;
     }
-    if (statusFilter.value === 'discrepancy' && (item.status === 'matched' || item.status === 'pending')) {
-      return false;
+    if (statusFilter.value === 'discrepancy') {
+      return item.status === 'missing' || item.status === 'surplus';
     }
-    if (statusFilter.value === 'matched' && item.status !== 'matched') {
-      return false;
+    if (statusFilter.value === 'matched') {
+      return item.status === 'matched';
     }
-    if (statusFilter.value === 'pending' && item.status !== 'pending') {
-      return false;
+    if (statusFilter.value === 'unscanned') {
+      return item.status === 'unscanned';
     }
     if (searchQuery.value && searchQuery.value.trim()) {
       const q = searchQuery.value.toLowerCase().trim();
       const bCode = String(item.barcode || '').toLowerCase();
-      const bBrand = String(item.brand || '').toLowerCase();
-      const bVarian = String(item.varian || '').toLowerCase();
-      const bTitle = String(item.productTitle || '').toLowerCase();
+      const bBrand = String(item.subCategory || item.brand || '').toLowerCase();
+      const bTitle = String(item.productTitle || item.varian || '').toLowerCase();
       const bSku = String(item.sku || '').toLowerCase();
 
       const match =
         bCode.includes(q) ||
         bBrand.includes(q) ||
-        bVarian.includes(q) ||
         bTitle.includes(q) ||
         bSku.includes(q);
       if (!match) return false;
@@ -173,9 +173,10 @@ const scannedOnlyItems = computed(() => {
 });
 
 const accuracyPercentage = computed(() => {
-  if (totalWpExpected.value === 0) return 100;
-  const accurate = Math.min(totalScanned.value, totalWpExpected.value);
-  return Math.round((accurate / totalWpExpected.value) * 100);
+  const activeItems = auditItems.value.filter((i) => i.wpExpectedQty > 0 || i.scannedCount > 0);
+  if (activeItems.length === 0) return 100;
+  const matched = activeItems.filter((i) => i.status === 'matched').length;
+  return Math.round((matched / activeItems.length) * 100);
 });
 
 function handleScanSimulate(barcode) {
@@ -228,6 +229,7 @@ function exportAuditCSV() {
     No: idx + 1,
     Store: currentStore.value.name,
     'Kode Barcode': item.barcode,
+    Brand: item.subCategory || item.brand,
     'Product Name': item.productTitle || item.varian,
     Qty: item.wpExpectedQty,
     'Physical Scanned Count': item.scannedCount,
@@ -282,27 +284,19 @@ function exportAuditCSV() {
           <span>Add New Barcode</span>
         </button>
 
-        <!-- Single ESB Inventory Sync Button -->
-        <button
-          @click="syncFromESBERP()"
-          :disabled="isSyncing"
-          type="button"
-          class="px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm cursor-pointer"
-          title="Direct live sync of real inventory stock from My ESB ERP (Stock Period List)"
-        >
-          <Database class="w-3.5 h-3.5 text-teal-600" :class="isSyncing ? 'animate-spin' : ''" />
-          <span>{{ isSyncing ? 'Syncing Inventory...' : 'Sync ESB Inventory' }}</span>
-        </button>
-
-        <!-- ESB Session / Settings Button -->
-        <button
-          @click="isSessionModalOpen = true"
-          type="button"
-          class="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-300 text-xs font-bold flex items-center transition-colors shadow-sm cursor-pointer"
-          title="Update My ESB ERP Session Credentials"
-        >
-          <Settings class="w-4 h-4 text-slate-600" />
-        </button>
+        <!-- Live Auto-Sync Status Badge & Session Settings -->
+        <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-600 shadow-sm">
+          <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+          <span class="text-[11px] font-bold text-slate-700">Auto-synced (15m)</span>
+          <button
+            @click="isSessionModalOpen = true"
+            type="button"
+            class="p-1 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors ml-0.5"
+            title="Update My ESB ERP Session Credentials"
+          >
+            <Settings class="w-3.5 h-3.5" />
+          </button>
+        </div>
 
         <!-- Finalize Audit Button -->
         <button
@@ -625,7 +619,7 @@ function exportAuditCSV() {
       <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
         <div class="flex items-center justify-between">
           <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Audit Accuracy</span>
-          <span class="text-xs text-slate-800 font-mono font-bold">{{ matchedVariantsCount }} / {{ auditItems.length }} Matched</span>
+          <span class="text-xs text-slate-800 font-mono font-bold">{{ matchedVariantsCount }} / {{ storeItemsCount || auditItems.length }} Matched</span>
         </div>
         <div class="my-2">
           <div class="flex items-baseline gap-2">
@@ -712,12 +706,13 @@ function exportAuditCSV() {
               <span class="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">{{ matchedVariantsCount }}</span>
             </button>
             <button
-              @click="statusFilter = 'pending'"
+              @click="statusFilter = 'unscanned'"
               type="button"
-              class="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
-              :class="statusFilter === 'pending' ? 'bg-slate-300 text-slate-800' : 'text-slate-600 hover:text-slate-900'"
+              class="px-3 py-1 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1"
+              :class="statusFilter === 'unscanned' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'"
             >
-              Unscanned
+              <span>Unscanned</span>
+              <span class="px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 text-[10px] font-bold">{{ unscannedVariantsCount }}</span>
             </button>
           </div>
 
@@ -741,6 +736,7 @@ function exportAuditCSV() {
             <tr class="bg-slate-100 border-b border-slate-300 text-[11px] font-bold text-slate-700 uppercase tracking-wider">
               <th class="py-3 px-4 w-12 text-center bg-slate-100">No</th>
               <th class="py-3 px-4 bg-slate-100">Kode Barcode</th>
+              <th class="py-3 px-4 bg-slate-100">Brand</th>
               <th class="py-3 px-4 bg-slate-100">Product Name</th>
               <th class="py-3 px-4 text-center bg-slate-200/90 text-slate-800">
                 Qty
@@ -781,6 +777,13 @@ function exportAuditCSV() {
                     {{ item.barcode }}
                   </span>
                 </div>
+              </td>
+
+              <!-- Brand (Sub Category from ESB) -->
+              <td class="py-3.5 px-4">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
+                  {{ item.subCategory || item.brand }}
+                </span>
               </td>
 
               <!-- Product Name -->
@@ -864,24 +867,27 @@ function exportAuditCSV() {
                   class="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200"
                 >
                   <CheckCircle2 class="w-3.5 h-3.5" />
-                  0 (Exact Match)
+                  0 (Match)
                 </span>
                 <span
                   v-else-if="item.status === 'missing'"
                   class="inline-flex items-center gap-1 font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200"
                 >
                   <AlertTriangle class="w-3.5 h-3.5" />
-                  {{ item.discrepancy }} cans missing
+                  {{ item.discrepancy }} (Shortage)
                 </span>
                 <span
                   v-else-if="item.status === 'surplus'"
                   class="inline-flex items-center gap-1 font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200"
                 >
                   <AlertCircle class="w-3.5 h-3.5" />
-                  +{{ item.discrepancy }} surplus cans
+                  +{{ item.discrepancy }} (Surplus)
                 </span>
-                <span v-else class="text-slate-400 italic">
-                  Not counted yet
+                <span v-else-if="item.status === 'zero_stock'" class="text-slate-400 font-semibold text-xs">
+                  0
+                </span>
+                <span v-else class="text-slate-400 italic text-xs">
+                  -
                 </span>
               </td>
 
@@ -896,17 +902,21 @@ function exportAuditCSV() {
                       ? 'bg-rose-50 text-rose-700 border border-rose-200'
                       : item.status === 'surplus'
                       ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                      : 'bg-slate-100 text-slate-500'
+                      : item.status === 'zero_stock'
+                      ? 'bg-slate-50 text-slate-400 border border-slate-200'
+                      : 'bg-slate-100 text-slate-600 border border-slate-200'
                   "
                 >
                   {{
                     item.status === 'matched'
-                      ? 'Verified OK'
+                      ? 'Matched'
                       : item.status === 'missing'
-                      ? 'Missing'
+                      ? 'Shortage'
                       : item.status === 'surplus'
-                      ? 'Overcount'
-                      : 'Pending Scan'
+                      ? 'Surplus'
+                      : item.status === 'zero_stock'
+                      ? 'Zero Stock'
+                      : 'Unscanned'
                   }}
                 </span>
               </td>

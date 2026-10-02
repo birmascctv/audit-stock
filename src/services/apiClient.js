@@ -162,3 +162,12 @@ export async function apiSyncDirectESB() {
   return await res.json();
 }
 
+export async function apiSyncESBERP(credentials) {
+  const res = await fetch(`${API_BASE}/esb/sync-erp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(credentials || {}),
+  });
+  return await res.json();
+}
+

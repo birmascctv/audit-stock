@@ -211,6 +211,153 @@ export async function runDirectESBSync() {
   }
 }
 
+// ==========================================
+// MY ESB ERP INVENTORY SYNC ENGINE
+// Pulls directly from My ESB ERP (Stock Period List)
+// ==========================================
+let isErpSyncing = false;
+
+const DEFAULT_ERP_COOKIE = `_csrf-esb-fnb-backend=f78ccb84cefe055a764612525d2f74062e83a7c0a022538d86aa4fae44216c71a%3A2%3A%7Bi%3A0%3Bs%3A21%3A%22_csrf-esb-fnb-backend%22%3Bi%3A1%3Bs%3A32%3A%22L4gJX2eDfoa3DbPJAvw5vRJ89C12jNGn%22%3B%7D; PHPSESSID=t4vll2k1onjef4pmhma58f4bb0; _jwt-token=6610caad01882c9402616a0929ee9dfa964c4e662ad1643bde5be6fd8c0701c3a%3A2%3A%7Bi%3A0%3Bs%3A10%3A%22_jwt-token%22%3Bi%3A1%3Bs%3A373%3A%22eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRob3JpemVkIjp0cnVlLCJjb21wYW55Q29kZSI6IkJSTSIsImNvbXBhbnlJRCI6NTk3MSwiY29tcGFueU5hbWUiOiJQVC4gQmlybWFzIE1lcnViYWggUGVyc2Vwc2kiLCJkYk5hbWUiOiJmbmJfYnJtIiwiZXhwIjoxNzkwOTU1MDE0LCJmdWxsTmFtZSI6IlBoaWxsaXAiLCJzZXJ2ZXJDb2RlIjoiZ2xvYmFsMyIsInVzZXJSb2xlSUQiOjEsInVzZXJuYW1lIjoiQlJNUGhpbGxpcCJ9.j1zACEId80wffGXPNaJMGXA9A39dnOjngStrNCEHbVQ%22%3B%7D; _identity=18b2dc04b4c5721f9b9c31dd6309b0068ae32ae914af34d8ade231f4cc8f8542a%3A2%3A%7Bi%3A0%3Bs%3A9%3A%22_identity%22%3Bi%3A1%3Bs%3A28%3A%22%5B%22BRMPhillip%22%2Cnull%2C31104000%5D%22%3B%7D;`;
+const DEFAULT_ERP_CSRF = 'YG3zBCat5kSNTL7OxAYsz9Az4Rt7B2fsyYtF8Y3WYCQsWZROfp-DAOsj3_2AZHyFkUWWLg1VLdTwyHTD55gnSg==';
+
+export async function runDirectESBERPSync(options = {}) {
+  if (isErpSyncing) {
+    return { success: false, message: 'ERP Stock sync is already running in background' };
+  }
+  isErpSyncing = true;
+  try {
+    const savedCookie = db.getConfig('esb_erp_cookie');
+    const savedCsrf = db.getConfig('esb_erp_csrf');
+    const cookie = options.cookie || savedCookie || DEFAULT_ERP_COOKIE;
+    const csrf = options.csrf || savedCsrf || DEFAULT_ERP_CSRF;
+
+    if (options.cookie) db.setConfig('esb_erp_cookie', options.cookie);
+    if (options.csrf) db.setConfig('esb_erp_csrf', options.csrf);
+
+    const today = new Date().toISOString().split('T')[0];
+
+    // Branch configuration in ESB ERP
+    const branches = [
+      { branchId: 3, locationId: 5, storeId: 'birmas-kuningan', name: 'BIRMAS KUNINGAN' },
+    ];
+
+    // Ensure Kuningan exists in stores table
+    const existingStores = db.getAllStores();
+    if (!existingStores.some((s) => s.id === 'birmas-kuningan')) {
+      db.saveStore({
+        id: 'birmas-kuningan',
+        name: 'Birmas Kuningan',
+        locationCode: 'KUNINGAN',
+        esbBranchCode: 'KUNINGAN',
+      });
+    }
+
+    const existingProducts = db.getAllProducts();
+    const barcodeMap = new Map();
+    for (const p of existingProducts) {
+      if (p.barcode) {
+        barcodeMap.set(p.id, p.barcode);
+        if (p.productTitle) barcodeMap.set(p.productTitle.toLowerCase().trim(), p.barcode);
+      }
+    }
+
+    let totalSyncedProducts = 0;
+    const sampleItems = [];
+
+    for (const b of branches) {
+      for (let page = 1; page <= 15; page++) {
+        const url = `https://erp.esb.co.id/stock-period?StockCardForm%5BcategoryTypeID%5D%5B%5D=1&StockCardForm%5BbranchID%5D=${b.branchId}&StockCardForm%5BlocationID%5D%5B%5D=${b.locationId}&StockCardForm%5BstockDate%5D=${today}&_pjax=%23search-pjax&page=${page}`;
+        const res = await fetch(url, {
+          headers: {
+            cookie,
+            'x-csrf-token': csrf,
+            'x-pjax': 'true',
+            'x-pjax-container': '#search-pjax',
+            'x-requested-with': 'XMLHttpRequest',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/154.0.0.0',
+          },
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (!res.ok) {
+          console.warn(`[ESB ERP Sync] Page ${page} failed with status ${res.status}`);
+          break;
+        }
+
+        const html = await res.text();
+        const rows = html.match(/<tr[^>]*data-key[^>]*>[\s\S]*?<\/tr>/gi) || [];
+        if (rows.length === 0) break;
+
+        for (const r of rows) {
+          const cells = [];
+          for (const m of r.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)) {
+            cells.push(m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
+          }
+          if (cells.length >= 10 && cells[0] !== '#') {
+            const idMatch = r.match(/productID%22%3A(\d+)/i) || r.match(/"productID":(\d+)/i);
+            const productId = idMatch ? idMatch[1] : `erp-${totalSyncedProducts + 1}`;
+            const prodName = cells[3];
+            const prodCode = cells[4];
+            const category = cells[5];
+            const subCategory = cells[6];
+            const defaultUnit = cells[7];
+            const stockQty = parseFloat(cells[9]?.replace(/\./g, '').replace(',', '.')) || 0;
+            const availableQty = parseFloat(cells[11]?.replace(/\./g, '').replace(',', '.')) || 0;
+            const price = parseFloat(cells[12]?.replace(/\./g, '').replace(',', '.')) || 0;
+
+            const prodId = `erp-${productId}`;
+            const existingBarcode = barcodeMap.get(prodId) || barcodeMap.get(prodName.toLowerCase().trim()) || null;
+
+            let brand = subCategory || 'Birmas';
+            let varian = prodName;
+            if (varian.toLowerCase().startsWith(brand.toLowerCase())) {
+              varian = varian.slice(brand.length).trim();
+            }
+
+            db.saveProduct({
+              id: prodId,
+              barcode: existingBarcode,
+              sku: prodCode || `SKU-${productId}`,
+              brand: brand,
+              varian: varian || prodName,
+              productTitle: prodName,
+              category: category,
+              subCategory: subCategory,
+              defaultUnit: defaultUnit,
+              packageType: defaultUnit === 'CAN' ? 'Kaleng' : 'Botol',
+              volume: prodName.includes('620') ? 620 : 330,
+              unitVolume: 'ml',
+              price: price,
+              wpStatus: 'publish',
+              lastUpdated: new Date().toISOString(),
+            });
+
+            db.setProductStock(b.storeId, prodId, availableQty);
+            totalSyncedProducts++;
+            if (sampleItems.length < 5) {
+              sampleItems.push({ id: prodId, name: prodName, availableQty });
+            }
+          }
+        }
+      }
+    }
+
+    db.setConfig('last_esb_erp_synced_at', new Date().toISOString());
+    console.log(`[ESB ERP Sync] Success! Synced ${totalSyncedProducts} items from My ESB Stock List.`);
+    return {
+      success: true,
+      totalSyncedProducts,
+      sampleItems,
+      lastSyncedAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    console.error('[ESB ERP Sync] Error:', err);
+    return { success: false, message: err.message };
+  } finally {
+    isErpSyncing = false;
+  }
+}
+
 async function startServer() {
   const app = express();
   app.use(express.json());
@@ -511,7 +658,7 @@ async function startServer() {
     }
   });
 
-  // 13. Direct ESB Live Sync
+  // 13. Direct ESB Live Sync (POS Menu)
   app.post('/api/esb/sync-direct', async (req, res) => {
     try {
       const result = await runDirectESBSync();
@@ -523,6 +670,34 @@ async function startServer() {
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });
     }
+  });
+
+  // 13b. Direct My ESB ERP Inventory Stock Sync (Stock Period List)
+  app.post('/api/esb/sync-erp', async (req, res) => {
+    try {
+      const result = await runDirectESBERPSync(req.body || {});
+      res.json({
+        success: true,
+        message: `Successfully synchronized ${result.totalSyncedProducts || 0} real inventory items from My ESB ERP (Kuningan)`,
+        ...result,
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/esb/erp-config', (req, res) => {
+    res.json({
+      hasCustomCookie: !!db.getConfig('esb_erp_cookie'),
+      lastSyncedAt: db.getConfig('last_esb_erp_synced_at') || null,
+    });
+  });
+
+  app.post('/api/esb/erp-config', (req, res) => {
+    const { cookie, csrf } = req.body;
+    if (cookie) db.setConfig('esb_erp_cookie', cookie);
+    if (csrf) db.setConfig('esb_erp_csrf', csrf);
+    res.json({ success: true, message: 'Updated My ESB ERP session credentials' });
   });
 
   // 14. Instant Webhook from ESB / WordPress

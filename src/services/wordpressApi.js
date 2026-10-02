@@ -15,6 +15,7 @@ import {
   apiFetchDatabaseStatus,
   apiSyncWordPress as apiRunSync,
   apiSyncDirectESB,
+  apiSyncESBERP,
   apiAddStore,
   apiDeleteStore,
 } from './apiClient.js';
@@ -121,6 +122,10 @@ export async function syncWordPressData(config) {
 
 export async function syncDirectESB() {
   return await apiSyncDirectESB();
+}
+
+export async function syncDirectESBERP(credentials) {
+  return await apiSyncESBERP(credentials);
 }
 
 export async function fetchDatabaseHealth() {

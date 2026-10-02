@@ -54,6 +54,7 @@ const {
   selectStore,
   syncFromWordPress,
   syncFromESBDirect,
+  syncFromESBERP,
   finalizeAudit,
   isSyncing,
   lastSyncStatus,
@@ -246,6 +247,18 @@ function exportAuditCSV() {
         >
           <Plus class="w-3.5 h-3.5 text-teal-700" />
           <span>Add New Barcode</span>
+        </button>
+
+        <!-- Direct My ESB ERP Inventory Sync Button -->
+        <button
+          @click="syncFromESBERP()"
+          :disabled="isSyncing"
+          type="button"
+          class="px-3.5 py-2 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-300 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm cursor-pointer"
+          title="Direct live sync of real inventory stock from My ESB ERP (Stock Period List)"
+        >
+          <Database class="w-3.5 h-3.5 text-cyan-600" :class="isSyncing ? 'animate-spin' : ''" />
+          <span>{{ isSyncing ? 'Syncing...' : 'Sync My ESB (Inventory)' }}</span>
         </button>
 
         <!-- Direct ESB Sync Button -->

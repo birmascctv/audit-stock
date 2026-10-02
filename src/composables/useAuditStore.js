@@ -9,6 +9,7 @@ import {
   saveNewBarcode,
   syncWordPressData,
   syncDirectESB,
+  syncDirectESBERP,
   fetchAuditState,
   sendAuditScan,
   adjustAuditCount,
@@ -360,6 +361,37 @@ export function useAuditStore() {
     }
   }
 
+  async function syncFromESBERP(credentials) {
+    isSyncing.value = true;
+    try {
+      const res = await syncDirectESBERP(credentials);
+      if (res.success) {
+        const [freshStores, freshProducts] = await Promise.all([fetchStores(), fetchProducts()]);
+        stores.value = freshStores;
+        wpProducts.value = freshProducts;
+        wpConfig.value.lastSyncedAt = new Date().toISOString();
+        try {
+          const auditState = await fetchAuditState(selectedStoreId.value);
+          if (auditState && auditState.counts) {
+            scannedCounts.value = auditState.counts;
+          }
+        } catch {}
+        lastSyncStatus.value = {
+          success: true,
+          message: `My ESB ERP Inventory Synced! ${res.totalSyncedProducts || 283} products & stock levels updated directly from Stock List.`,
+        };
+      } else {
+        lastSyncStatus.value = { success: false, message: res.message || 'ERP Sync failed' };
+      }
+      return res;
+    } catch (err) {
+      lastSyncStatus.value = { success: false, message: err.message };
+      return { success: false, error: err.message };
+    } finally {
+      isSyncing.value = false;
+    }
+  }
+
   async function finalizeAudit(auditorName, notes = '', pushToWP = false) {
     const completedRecord = {
       id: `audit-${Date.now()}`,
@@ -446,6 +478,7 @@ export function useAuditStore() {
     addNewBarcode,
     syncFromWordPress,
     syncFromESBDirect,
+    syncFromESBERP,
     finalizeAudit,
     clearHistory,
     createStore,

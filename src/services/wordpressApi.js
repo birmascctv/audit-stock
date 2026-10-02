@@ -22,34 +22,28 @@ import {
 
 export const DEFAULT_STORES = [
   {
-    id: 'birmas-sudirman',
-    name: 'Birmas Sudirman',
-    locationCode: 'BIRMAS-SDR',
-    esbBranchCode: 'BRMS',
-  },
-  {
     id: 'birmas-kuningan',
     name: 'Birmas Kuningan',
-    locationCode: 'BIRMAS-KNG',
-    esbBranchCode: 'BRMK',
+    locationCode: 'BRM-KNG',
+    esbBranchCode: 'KUNINGAN',
+  },
+  {
+    id: 'birmas-sudirman',
+    name: 'Birmas Sudirman',
+    locationCode: 'BRM-SDR',
+    esbBranchCode: 'SUDIRMAN',
   },
   {
     id: 'birmas-kwitang',
     name: 'Birmas Kwitang',
-    locationCode: 'BIRMAS-KWT',
-    esbBranchCode: 'BRMKW',
-  },
-  {
-    id: 'birmas-kelapa-gading',
-    name: 'Birmas Kelapa Gading',
-    locationCode: 'BIRMAS-GDD',
-    esbBranchCode: 'BRMKG',
+    locationCode: 'BRM-KWT',
+    esbBranchCode: 'KWITANG',
   },
   {
     id: 'birmas-lebak-bulus',
     name: 'Birmas Lebak Bulus',
-    locationCode: 'BIRMAS-LBB',
-    esbBranchCode: 'BRMLB',
+    locationCode: 'BRM-LBB',
+    esbBranchCode: 'LEBAKBULUS',
   },
 ];
 

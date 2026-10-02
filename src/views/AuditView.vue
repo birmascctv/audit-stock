@@ -28,7 +28,8 @@ import {
   ExternalLink,
   Package,
   Trash2,
-  Zap
+  Zap,
+  Settings
 } from 'lucide-vue-next';
 
 const { currentUser } = useAuth();
@@ -67,10 +68,43 @@ const brandFilter = ref('ALL');
 // Modals
 const isCompleteModalOpen = ref(false);
 const isAddBarcodeModalOpen = ref(false);
+const isSessionModalOpen = ref(false);
+const rawCurlInput = ref('');
+const isSavingSession = ref(false);
+const sessionStatusMsg = ref('');
 const pendingUnknownBarcode = ref('');
 const isFinalizing = ref(false);
 const auditNotes = ref('');
 const pushToWordPressOnFinalize = ref(true);
+
+async function saveSessionFromCurl() {
+  if (!rawCurlInput.value.trim()) return;
+  isSavingSession.value = true;
+  sessionStatusMsg.value = '';
+  try {
+    const res = await fetch('/api/esb/erp-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rawCurl: rawCurlInput.value }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      sessionStatusMsg.value = 'Session updated successfully! Syncing fresh stock...';
+      rawCurlInput.value = '';
+      await syncFromESBERP();
+      setTimeout(() => {
+        isSessionModalOpen.value = false;
+        sessionStatusMsg.value = '';
+      }, 1500);
+    } else {
+      sessionStatusMsg.value = data.message || 'Failed to update session';
+    }
+  } catch (err) {
+    sessionStatusMsg.value = err.message;
+  } finally {
+    isSavingSession.value = false;
+  }
+}
 
 const editingBarcode = ref(null);
 const editCountValue = ref(0);
@@ -249,28 +283,26 @@ function exportAuditCSV() {
           <span>Add New Barcode</span>
         </button>
 
-        <!-- Direct My ESB ERP Inventory Sync Button -->
+        <!-- Single ESB Inventory Sync Button -->
         <button
           @click="syncFromESBERP()"
           :disabled="isSyncing"
           type="button"
-          class="px-3.5 py-2 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-300 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm cursor-pointer"
+          class="px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm cursor-pointer"
           title="Direct live sync of real inventory stock from My ESB ERP (Stock Period List)"
         >
-          <Database class="w-3.5 h-3.5 text-cyan-600" :class="isSyncing ? 'animate-spin' : ''" />
-          <span>{{ isSyncing ? 'Syncing...' : 'Sync My ESB (Inventory)' }}</span>
+          <Database class="w-3.5 h-3.5 text-teal-600" :class="isSyncing ? 'animate-spin' : ''" />
+          <span>{{ isSyncing ? 'Syncing Inventory...' : 'Sync ESB Inventory' }}</span>
         </button>
 
-        <!-- Direct ESB Sync Button -->
+        <!-- ESB Session / Settings Button -->
         <button
-          @click="syncFromESBDirect"
-          :disabled="isSyncing"
+          @click="isSessionModalOpen = true"
           type="button"
-          class="px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm cursor-pointer"
-          title="Direct live sync of real chiller stocks from ESB Cloud"
+          class="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-300 text-xs font-bold flex items-center transition-colors shadow-sm cursor-pointer"
+          title="Update My ESB ERP Session Credentials"
         >
-          <RefreshCw class="w-3.5 h-3.5 text-teal-600" :class="isSyncing ? 'animate-spin' : ''" />
-          <span>{{ isSyncing ? 'Syncing ESB...' : 'Direct ESB Sync' }}</span>
+          <Settings class="w-4 h-4 text-slate-600" />
         </button>
 
         <!-- Finalize Audit Button -->
@@ -1001,5 +1033,78 @@ function exportAuditCSV() {
       @close="isAddBarcodeModalOpen = false; pendingUnknownBarcode = ''"
       @barcode-added="pendingUnknownBarcode = ''"
     />
+
+    <!-- Modal: My ESB ERP Session & Credentials -->
+    <div
+      v-if="isSessionModalOpen"
+      class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4"
+      @click.self="isSessionModalOpen = false"
+    >
+      <div class="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center">
+              <Database class="w-5 h-5" />
+            </div>
+            <div>
+              <h3 class="text-base font-extrabold text-slate-900">My ESB ERP Session</h3>
+              <p class="text-xs text-slate-500">Live Inventory Stock Period Connection</p>
+            </div>
+          </div>
+          <button
+            @click="isSessionModalOpen = false"
+            class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2.5">
+          <CheckCircle2 class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+          <div>
+            <span class="font-bold block">Status: Connected to PT. Birmas Merubah Persepsi</span>
+            <span class="text-slate-600 text-[11px] block mt-0.5">User: BRMPhillip (KUNINGAN Branch #3, 283 items)</span>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <label class="text-xs font-bold text-slate-700 block">
+            Update Session (Paste cURL from Chrome DevTools)
+          </label>
+          <p class="text-[11px] text-slate-500">
+            If your session ever expires in the future, simply Right-Click the <code class="bg-slate-100 px-1 py-0.5 rounded text-teal-800">stock-period</code> request in DevTools &gt; Copy as cURL, and paste it here:
+          </p>
+          <textarea
+            v-model="rawCurlInput"
+            rows="4"
+            placeholder="curl --url 'https://erp.esb.co.id/stock-period?...' -b '...' -H '...'"
+            class="w-full text-xs font-mono p-3 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:border-teal-500 text-slate-800 resize-none"
+          ></textarea>
+        </div>
+
+        <div v-if="sessionStatusMsg" class="p-3 rounded-xl text-xs font-medium bg-teal-50 text-teal-900 border border-teal-200">
+          {{ sessionStatusMsg }}
+        </div>
+
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button
+            @click="isSessionModalOpen = false"
+            type="button"
+            class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
+          >
+            Close
+          </button>
+          <button
+            @click="saveSessionFromCurl"
+            :disabled="!rawCurlInput.trim() || isSavingSession"
+            type="button"
+            class="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-teal-600/20 disabled:opacity-50"
+          >
+            <CheckCircle2 class="w-4 h-4" />
+            <span>{{ isSavingSession ? 'Updating & Syncing...' : 'Update Session' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

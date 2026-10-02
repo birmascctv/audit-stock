@@ -142,6 +142,25 @@ function initTables(db) {
   upsertUser.run('user-admin', 'admin', 'admin@birmas.id', 'admin666', 'Admin', 'admin');
   upsertUser.run('user-chrisna', 'chrisna', 'chrisna@birmas.id', 'auditor666', 'Chrisna', 'auditor');
 
+  // Guarantee the 4 official stores requested: Kuningan, Sudirman, Kwitang, Lebak Bulus
+  const upsertStore = db.prepare(`
+    INSERT INTO stores (id, name, location_code, esb_branch_code)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      location_code = excluded.location_code,
+      esb_branch_code = excluded.esb_branch_code;
+  `);
+  upsertStore.run('birmas-kuningan', 'Birmas Kuningan', 'BRM-KNG', 'KUNINGAN');
+  upsertStore.run('birmas-sudirman', 'Birmas Sudirman', 'BRM-SDR', 'SUDIRMAN');
+  upsertStore.run('birmas-kwitang', 'Birmas Kwitang', 'BRM-KWT', 'KWITANG');
+  upsertStore.run('birmas-lebak-bulus', 'Birmas Lebak Bulus', 'BRM-LBB', 'LEBAKBULUS');
+
+  // Purge any other test or duplicate stores
+  db.exec(`
+    DELETE FROM stores WHERE id NOT IN ('birmas-kuningan', 'birmas-sudirman', 'birmas-kwitang', 'birmas-lebak-bulus');
+  `);
+
   // Purge any legacy mock barcodes from previous template versions
   db.exec(`
     DELETE FROM products WHERE id LIKE 'wp-10%';

@@ -66,14 +66,11 @@ export async function runDirectESBSync() {
     console.log(`[Direct ESB Sync] Syncing ${targetBranches.length} Birmas branches in SQLite...`);
     const branchMap = new Map();
     for (const b of targetBranches) {
-      const storeId = `birmas-${b.branchCode.toLowerCase()}`;
-      db.saveStore({
-        id: storeId,
-        wpId: null,
-        name: b.branchName ? (b.branchName.startsWith('Birmas') ? b.branchName : `Birmas ${b.branchName}`) : `Birmas ${b.branchCode}`,
-        locationCode: b.branchCode,
-        esbBranchCode: b.branchCode,
-      });
+      const code = (b.branchCode || '').toUpperCase();
+      let storeId = 'birmas-kuningan';
+      if (code.includes('SDR') || code.includes('SUDIRMAN') || code === 'OUTS') storeId = 'birmas-sudirman';
+      else if (code.includes('KWT') || code.includes('KWITANG')) storeId = 'birmas-kwitang';
+      else if (code.includes('LBB') || code.includes('LEBAK')) storeId = 'birmas-lebak-bulus';
       branchMap.set(b.branchCode, storeId);
     }
 
@@ -694,10 +691,23 @@ async function startServer() {
   });
 
   app.post('/api/esb/erp-config', (req, res) => {
-    const { cookie, csrf } = req.body;
+    let { cookie, csrf, rawCurl } = req.body;
+    if (rawCurl) {
+      // Auto-extract cookie from -b '...' or -H 'cookie: ...'
+      const cookieMatch = rawCurl.match(/-b\s+['"]([^'"]+)['"]/i) || rawCurl.match(/-H\s+['"]cookie:\s*([^'"]+)['"]/i);
+      if (cookieMatch) cookie = cookieMatch[1];
+      // Auto-extract csrf token from -H 'x-csrf-token: ...'
+      const csrfMatch = rawCurl.match(/x-csrf-token:\s*([^\s'"]+)/i);
+      if (csrfMatch) csrf = csrfMatch[1];
+    }
     if (cookie) db.setConfig('esb_erp_cookie', cookie);
     if (csrf) db.setConfig('esb_erp_csrf', csrf);
-    res.json({ success: true, message: 'Updated My ESB ERP session credentials' });
+    res.json({
+      success: true,
+      message: 'Updated My ESB ERP session credentials',
+      hasCookie: !!cookie,
+      hasCsrf: !!csrf,
+    });
   });
 
   // 14. Instant Webhook from ESB / WordPress

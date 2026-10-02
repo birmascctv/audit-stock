@@ -164,6 +164,10 @@ function initTables(db) {
   // Purge any legacy mock barcodes from previous template versions
   db.exec(`
     DELETE FROM products WHERE id LIKE 'wp-10%';
+    DELETE FROM products WHERE id LIKE 'esb-%';
+    DELETE FROM store_stocks WHERE product_id LIKE 'esb-%';
+    DELETE FROM products WHERE category IN ('PERLENGKAPAN OUTLET', 'ASSET', 'Asset', 'NON DEPRECIATED ASSET');
+    DELETE FROM store_stocks WHERE product_id IN ('erp-276', 'erp-298', 'erp-254');
     UPDATE products SET barcode = NULL WHERE barcode IN (
       '8997026800122', '8997026800030', '8997026800078', '8997026800016',
       '8993156000074', '8993156668267', '8993156668229', '8998888001011',
@@ -226,7 +230,13 @@ export function mapProductBarcode(productId, barcode) {
 // Stores Queries
 export function getAllStores() {
   const db = getDb();
-  const rows = db.prepare('SELECT id, wp_id as wpId, name, location_code as locationCode, esb_branch_code as esbBranchCode FROM stores ORDER BY name ASC;').all();
+  // Filter strictly to the 4 official store locations requested: Kuningan, Sudirman, Kwitang, Lebak Bulus
+  const rows = db.prepare(`
+    SELECT id, wp_id as wpId, name, location_code as locationCode, esb_branch_code as esbBranchCode 
+    FROM stores 
+    WHERE id IN ('birmas-kuningan', 'birmas-sudirman', 'birmas-kwitang', 'birmas-lebak-bulus')
+    ORDER BY name ASC;
+  `).all();
   return rows;
 }
 

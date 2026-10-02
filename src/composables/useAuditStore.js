@@ -361,10 +361,14 @@ export function useAuditStore() {
     }
   }
 
-  async function syncFromESBERP(credentials) {
+  async function syncFromESBERP(credentials = {}) {
     isSyncing.value = true;
     try {
-      const res = await syncDirectESBERP(credentials);
+      const payload = {
+        storeId: selectedStoreId.value,
+        ...credentials,
+      };
+      const res = await syncDirectESBERP(payload);
       if (res.success) {
         const [freshStores, freshProducts] = await Promise.all([fetchStores(), fetchProducts()]);
         stores.value = freshStores;
@@ -378,7 +382,7 @@ export function useAuditStore() {
         } catch {}
         lastSyncStatus.value = {
           success: true,
-          message: `My ESB ERP Inventory Synced! ${res.totalSyncedProducts || 283} products & stock levels updated directly from Stock List.`,
+          message: `ESB Inventory Synced! ${res.totalSyncedProducts || 0} real inventory items updated for ${currentStore.value.name}.`,
         };
       } else {
         lastSyncStatus.value = { success: false, message: res.message || 'ERP Sync failed' };

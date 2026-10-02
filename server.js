@@ -233,21 +233,18 @@ export async function runDirectESBERPSync(options = {}) {
 
     const today = new Date().toISOString().split('T')[0];
 
-    // Branch configuration in ESB ERP
-    const branches = [
+    // The 4 official Birmas locations in ESB ERP
+    const allBranches = [
       { branchId: 3, locationId: 5, storeId: 'birmas-kuningan', name: 'BIRMAS KUNINGAN' },
+      { branchId: 2, locationId: 4, storeId: 'birmas-sudirman', name: 'BIRMAS SUDIRMAN' },
+      { branchId: 5, locationId: 9, storeId: 'birmas-kwitang', name: 'BIRMAS KWITANG' },
+      { branchId: 9, locationId: 17, storeId: 'birmas-lebak-bulus', name: 'BIRMAS LEBAK BULUS' },
     ];
 
-    // Ensure Kuningan exists in stores table
-    const existingStores = db.getAllStores();
-    if (!existingStores.some((s) => s.id === 'birmas-kuningan')) {
-      db.saveStore({
-        id: 'birmas-kuningan',
-        name: 'Birmas Kuningan',
-        locationCode: 'KUNINGAN',
-        esbBranchCode: 'KUNINGAN',
-      });
-    }
+    // Sync requested store or all 4 official locations
+    const targetBranches = options.storeId && options.storeId !== 'all'
+      ? allBranches.filter((b) => b.storeId === options.storeId)
+      : allBranches;
 
     const existingProducts = db.getAllProducts();
     const barcodeMap = new Map();
@@ -261,8 +258,19 @@ export async function runDirectESBERPSync(options = {}) {
     let totalSyncedProducts = 0;
     const sampleItems = [];
 
-    for (const b of branches) {
-      for (let page = 1; page <= 15; page++) {
+    // Filter out non-inventory outlet hardware/assets
+    const excludedCategories = [
+      'PERLENGKAPAN OUTLET',
+      'ASSET',
+      'NON DEPRECIATED ASSET',
+      'ELECTRONIC',
+      'RENOVATION',
+      'TABLET',
+      'KITCHENWARE AND SUPPLIES',
+    ];
+
+    for (const b of targetBranches) {
+      for (let page = 1; page <= 16; page++) {
         const url = `https://erp.esb.co.id/stock-period?StockCardForm%5BcategoryTypeID%5D%5B%5D=1&StockCardForm%5BbranchID%5D=${b.branchId}&StockCardForm%5BlocationID%5D%5B%5D=${b.locationId}&StockCardForm%5BstockDate%5D=${today}&_pjax=%23search-pjax&page=${page}`;
         const res = await fetch(url, {
           headers: {
@@ -293,14 +301,24 @@ export async function runDirectESBERPSync(options = {}) {
           if (cells.length >= 10 && cells[0] !== '#') {
             const idMatch = r.match(/productID%22%3A(\d+)/i) || r.match(/"productID":(\d+)/i);
             const productId = idMatch ? idMatch[1] : `erp-${totalSyncedProducts + 1}`;
-            const prodName = cells[3];
-            const prodCode = cells[4];
-            const category = cells[5];
-            const subCategory = cells[6];
-            const defaultUnit = cells[7];
+            const prodName = cells[3] || '';
+            const prodCode = cells[4] || '';
+            const category = cells[5] || '';
+            const subCategory = cells[6] || '';
+            const defaultUnit = cells[7] || '';
             const stockQty = parseFloat(cells[9]?.replace(/\./g, '').replace(',', '.')) || 0;
             const availableQty = parseFloat(cells[11]?.replace(/\./g, '').replace(',', '.')) || 0;
             const price = parseFloat(cells[12]?.replace(/\./g, '').replace(',', '.')) || 0;
+
+            // Skip non-merchandise supplies
+            if (
+              excludedCategories.includes(category.toUpperCase()) ||
+              prodName.toLowerCase().includes('cleaner') ||
+              prodName.toLowerCase().includes('router') ||
+              prodName.toLowerCase().includes('shovel')
+            ) {
+              continue;
+            }
 
             const prodId = `erp-${productId}`;
             const existingBarcode = barcodeMap.get(prodId) || barcodeMap.get(prodName.toLowerCase().trim()) || null;
@@ -332,15 +350,16 @@ export async function runDirectESBERPSync(options = {}) {
             db.setProductStock(b.storeId, prodId, availableQty);
             totalSyncedProducts++;
             if (sampleItems.length < 5) {
-              sampleItems.push({ id: prodId, name: prodName, availableQty });
+              sampleItems.push({ id: prodId, name: prodName, availableQty, store: b.name });
             }
           }
         }
       }
+      console.log(`[ESB ERP Sync] Finished location: ${b.name}`);
     }
 
     db.setConfig('last_esb_erp_synced_at', new Date().toISOString());
-    console.log(`[ESB ERP Sync] Success! Synced ${totalSyncedProducts} items from My ESB Stock List.`);
+    console.log(`[ESB ERP Sync] Success! Synced ${totalSyncedProducts} items from 4 Birmas store locations.`);
     return {
       success: true,
       totalSyncedProducts,

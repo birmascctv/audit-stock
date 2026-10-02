@@ -228,9 +228,8 @@ function exportAuditCSV() {
     No: idx + 1,
     Store: currentStore.value.name,
     'Kode Barcode': item.barcode,
-    Brand: item.brand,
-    Varian: item.varian,
-    'ESB Expected Stock': item.wpExpectedQty,
+    'Product Name': item.productTitle || item.varian,
+    Qty: item.wpExpectedQty,
     'Physical Scanned Count': item.scannedCount,
     Discrepancy: item.discrepancy,
     'Audit Status': item.status.toUpperCase(),
@@ -742,10 +741,9 @@ function exportAuditCSV() {
             <tr class="bg-slate-100 border-b border-slate-300 text-[11px] font-bold text-slate-700 uppercase tracking-wider">
               <th class="py-3 px-4 w-12 text-center bg-slate-100">No</th>
               <th class="py-3 px-4 bg-slate-100">Kode Barcode</th>
-              <th class="py-3 px-4 bg-slate-100">Brand</th>
-              <th class="py-3 px-4 bg-slate-100">Varian & Packaging</th>
+              <th class="py-3 px-4 bg-slate-100">Product Name</th>
               <th class="py-3 px-4 text-center bg-slate-200/90 text-slate-800">
-                ESB Expected
+                Qty
               </th>
               <th class="py-3 px-4 text-center bg-teal-100 text-teal-900">
                 Scanned Count
@@ -785,33 +783,21 @@ function exportAuditCSV() {
                 </div>
               </td>
 
-              <!-- Brand -->
-              <td class="py-3.5 px-4">
-                <span
-                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border"
-                  :class="
-                    item.brand === 'Kulturale'
-                      ? 'bg-amber-50 text-amber-800 border-amber-200'
-                      : item.brand === 'Albens'
-                      ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
-                      : 'bg-teal-50 text-teal-800 border-teal-200'
-                  "
-                >
-                  {{ item.brand }}
-                </span>
-              </td>
-
-              <!-- Varian -->
+              <!-- Product Name -->
               <td class="py-3.5 px-4 font-semibold text-slate-900">
                 <div class="flex flex-col">
-                  <span>{{ item.varian }}</span>
-                  <span v-if="item.lastScannedAt" class="text-[10px] text-slate-400 font-mono font-normal">
-                    Last scan: {{ formatDateTime(item.lastScannedAt).time }}
-                  </span>
+                  <span class="text-sm font-bold text-slate-900">{{ item.productTitle || item.varian }}</span>
+                  <div class="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 font-normal">
+                    <span v-if="item.defaultUnit" class="bg-slate-100 text-slate-700 font-bold px-1.5 py-0.2 rounded text-[10px]">{{ item.defaultUnit }}</span>
+                    <span v-if="item.category" class="text-slate-400 font-medium">{{ item.category }}</span>
+                    <span v-if="item.lastScannedAt" class="text-[10px] text-slate-400 font-mono">
+                      • Last scan: {{ formatDateTime(item.lastScannedAt).time }}
+                    </span>
+                  </div>
                 </div>
               </td>
 
-              <!-- ESB Stock Expected -->
+              <!-- Qty (ESB Expected) -->
               <td class="py-3.5 px-4 text-center font-mono font-bold text-slate-800 bg-slate-50/40 text-base">
                 {{ item.wpExpectedQty }}
               </td>

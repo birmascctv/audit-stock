@@ -137,7 +137,6 @@ function initTables(db) {
     );
   `);
 
-
   // Seed default WP config if not present
   const wpUrl = db.prepare('SELECT value FROM app_config WHERE key = ?;').get('wp_url');
   if (!wpUrl) {
@@ -148,6 +147,46 @@ function initTables(db) {
     setConfigStmt.run('is_connected', 'true');
     setConfigStmt.run('last_synced_at', new Date().toISOString());
   }
+
+  cleanupLegacyWordPressData(db);
+}
+
+// Automatically purges old wp-* rows and preserves barcodes on ESB items
+export function cleanupLegacyWordPressData(providedDb) {
+  const db = providedDb || getDb();
+  try {
+    const wpProducts = db.prepare("SELECT * FROM products WHERE id LIKE 'wp-%' AND barcode IS NOT NULL;").all();
+    const esbProducts = db.prepare("SELECT * FROM products WHERE id LIKE 'esb-%';").all();
+
+    let migrated = 0;
+    for (const wp of wpProducts) {
+      const match = esbProducts.find(
+        (esb) =>
+          esb.brand?.toLowerCase() === wp.brand?.toLowerCase() &&
+          (esb.varian?.toLowerCase().includes(wp.varian?.toLowerCase()) || wp.varian?.toLowerCase().includes(esb.varian?.toLowerCase()))
+      );
+      if (match && !match.barcode) {
+        db.prepare('UPDATE products SET barcode = ? WHERE id = ?;').run(wp.barcode, match.id);
+        migrated++;
+      }
+    }
+
+    const delP = db.prepare("DELETE FROM products WHERE id LIKE 'wp-%' OR product_title = 'Birmas Product';").run();
+    const delS = db.prepare("DELETE FROM store_stocks WHERE product_id LIKE 'wp-%';").run();
+    console.log(`[DB Auto-Cleanup] Purged legacy WordPress duplicates. Migrated ${migrated} barcodes to ESB items.`);
+    return { migratedBarcodes: migrated, deletedProducts: delP.changes, deletedStocks: delS.changes };
+  } catch (err) {
+    console.warn('[DB Cleanup Note]:', err.message);
+    return { error: err.message };
+  }
+}
+
+export function mapProductBarcode(productId, barcode) {
+  const db = getDb();
+  const clean = barcode.trim();
+  db.prepare('UPDATE products SET barcode = NULL WHERE barcode = ?;').run(clean);
+  db.prepare('UPDATE products SET barcode = ?, last_updated = ? WHERE id = ?;').run(clean, new Date().toISOString(), productId);
+  return db.prepare('SELECT * FROM products WHERE id = ?;').get(productId);
 }
 
 // Stores Queries

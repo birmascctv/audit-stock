@@ -26,12 +26,10 @@ import {
   Sparkles,
   ExternalLink,
   UploadCloud,
-  Trash2,
 } from 'lucide-vue-next';
 import UploadSalesCsvModal from '../components/UploadSalesCsvModal.vue';
 
 const { currentUser, role, isSuperAdmin } = useAuth();
-const { stores } = useAuditStore();
 
 // Filters
 const selectedStoreId = ref('all');
@@ -64,28 +62,30 @@ const summary = ref({
 const isLoading = ref(false);
 const isSyncing = ref(false);
 const syncMessage = ref('');
-const isHelpModalOpen = ref(false);
 const isUploadModalOpen = ref(false);
-const copiedCode = ref(false);
-
-async function handleClearData() {
-  if (!confirm('Are you sure you want to clear all imported sales records? The table will become empty and ready for fresh CSV upload.')) return;
-  try {
-    const res = await fetch('/api/sales/clear', { method: 'DELETE' });
-    const data = await res.json();
-    if (data.success) {
-      syncMessage.value = 'Sales table cleared successfully. Ready for CSV upload.';
-      await loadSalesReport();
-    }
-  } catch (err) {
-    alert('Failed to clear: ' + err.message);
-  }
-}
 
 function handleCsvImported(rows) {
   loadSalesReport();
-  syncMessage.value = `Successfully imported and synchronized ${rows.length} sales records from CSV!`;
+  syncMessage.value = `Successfully imported ${rows.length} sales records from CSV!`;
 }
+
+// Stores list derived dynamically from uploaded sales data
+const availableStores = computed(() => {
+  const storeMap = new Map();
+  if (summary.value?.byStore?.length) {
+    summary.value.byStore.forEach((s) => {
+      if (s.store_id && s.store_name) {
+        storeMap.set(s.store_id, s.store_name);
+      }
+    });
+  }
+  transactions.value.forEach((t) => {
+    if (t.store_id && t.store_name) {
+      storeMap.set(t.store_id, t.store_name);
+    }
+  });
+  return Array.from(storeMap.entries()).map(([id, name]) => ({ id, name }));
+});
 
 // Categories list
 const categories = computed(() => {
@@ -264,50 +264,6 @@ function handleExportCSV() {
   exportToCSV(filename, rows);
 }
 
-const wpSnippetCode = `// Add this to admin.birmas.id (functions.php or Code Snippets plugin)
-// Bridges ESB Sales Recapitulation Detail to Birmas Stock Audit Dashboard
-add_action('rest_api_init', function () {
-    register_rest_route('api/v1', '/sales_report', [
-        'methods' => 'GET',
-        'callback' => 'birmas_fetch_esb_sales_report',
-        'permission_callback' => '__return_true',
-    ]);
-});
-
-function birmas_fetch_esb_sales_report($request) {
-    $start_date = $request->get_param('start_date') ?: date('Y-m-d', strtotime('-7 days'));
-    $end_date   = $request->get_param('end_date') ?: date('Y-m-d');
-    
-    // Call ESB ERP directly from Birmas server's whitelisted IP:
-    $esb_url = 'https://erp.esb.co.id/report/report-sales-recapitulation-detail?start_date=' . $start_date . '&end_date=' . $end_date;
-    
-    $response = wp_remote_get($esb_url, [
-        'timeout' => 20,
-        'headers' => [
-            'Accept' => 'application/json',
-            // If session cookie or token is required:
-            // 'Cookie' => 'ci_session=YOUR_ESB_SESSION_COOKIE',
-        ],
-    ]);
-
-    if (is_wp_error($response)) {
-        return new WP_Error('esb_error', $response->get_error_message(), ['status' => 500]);
-    }
-
-    $body = wp_remote_retrieve_body($response);
-    return json_decode($body, true);
-}`;
-
-function copyBridgeSnippet() {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(wpSnippetCode);
-    copiedCode.value = true;
-    setTimeout(() => {
-      copiedCode.value = false;
-    }, 2000);
-  }
-}
-
 onMounted(() => {
   applyDatePreset('7d');
 });
@@ -367,29 +323,6 @@ onMounted(() => {
         >
           <Download class="w-3.5 h-3.5 text-emerald-600" />
           <span>Export CSV</span>
-        </button>
-
-        <!-- Clear All Sales Data Button -->
-        <button
-          v-if="transactions.length > 0"
-          @click="handleClearData"
-          type="button"
-          class="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-rose-50 hover:text-rose-600 text-slate-600 border border-slate-300 hover:border-rose-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-          title="Reset sales table to empty"
-        >
-          <Trash2 class="w-3.5 h-3.5 text-rose-500" />
-          <span>Clear Data</span>
-        </button>
-
-        <!-- Help & Architecture Modal Button -->
-        <button
-          @click="isHelpModalOpen = true"
-          type="button"
-          class="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-          title="How Birmas Server proxies ESB data"
-        >
-          <HelpCircle class="w-3.5 h-3.5 text-cyan-600" />
-          <span>Setup Guide</span>
         </button>
       </div>
     </div>
@@ -468,17 +401,17 @@ onMounted(() => {
       <!-- Stores Represented -->
       <div class="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs relative overflow-hidden">
         <div class="flex items-center justify-between">
-          <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Stores Included</span>
+          <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Stores Uploaded</span>
           <div class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
             <Store class="w-4 h-4" />
           </div>
         </div>
         <div class="mt-3">
           <h3 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-            {{ (summary.byStore || []).length || 4 }} <span class="text-xs font-normal text-slate-400">locations</span>
+            {{ availableStores.length }} <span class="text-xs font-normal text-slate-400">branches</span>
           </h3>
-          <p class="text-[11px] text-slate-500 mt-1 truncate">
-            Kuningan, Kwitang, Sudirman, Lebak Bulus
+          <p class="text-[11px] text-slate-500 mt-1 truncate" :title="availableStores.map(s => s.name).join(', ')">
+            {{ availableStores.length > 0 ? availableStores.map(s => s.name).join(', ') : 'Upload CSV to view branches' }}
           </p>
         </div>
       </div>
@@ -497,8 +430,8 @@ onMounted(() => {
                 @change="loadSalesReport"
                 class="appearance-none pl-3 pr-8 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 cursor-pointer focus:outline-none focus:border-teal-500"
               >
-                <option value="all">All Stores (Entire Chain)</option>
-                <option v-for="st in stores" :key="st.id" :value="st.id">
+                <option value="all">All Stores ({{ availableStores.length }} branches)</option>
+                <option v-for="st in availableStores" :key="st.id" :value="st.id">
                   {{ st.name }}
                 </option>
               </select>
@@ -1004,82 +937,10 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Help & Setup Modal: How to pull from Birmas Server -->
-    <div
-      v-if="isHelpModalOpen"
-      class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
-      @click.self="isHelpModalOpen = false"
-    >
-      <div class="bg-white rounded-3xl p-6 sm:p-7 max-w-2xl w-full shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-200">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center">
-              <HelpCircle class="w-5 h-5" />
-            </div>
-            <div>
-              <h3 class="text-base font-extrabold text-slate-900">How to Pull Sales from Birmas Server</h3>
-              <p class="text-xs text-slate-500">Bridging ESB's IP restriction to your dashboard</p>
-            </div>
-          </div>
-          <button
-            @click="isHelpModalOpen = false"
-            class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
-
-        <!-- Explanation card -->
-        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 space-y-2">
-          <p class="font-bold flex items-center gap-1.5">
-            <AlertCircle class="w-4 h-4 text-amber-700 shrink-0" />
-            Why must the data pass through the Birmas server?
-          </p>
-          <p class="leading-relaxed text-[11px] text-amber-800">
-            ESB's core ERP (<code class="bg-amber-100 px-1 py-0.5 rounded font-mono">erp.esb.co.id</code>) strictly whitelists the public IP address of your main Birmas server (<code class="bg-amber-100 px-1 py-0.5 rounded font-mono">admin.birmas.id</code>). Because this audit dashboard runs on another server, it cannot call ESB directly without getting blocked by firewall.
-          </p>
-          <p class="leading-relaxed text-[11px] text-amber-800">
-            <strong>The Solution:</strong> Your Birmas server exposes a simple REST endpoint (<code class="bg-amber-100 px-1 py-0.5 rounded font-mono">/wp-json/api/v1/sales_report</code>). When you click "Sync via Birmas Server", this dashboard calls your Birmas server, which forwards the request to ESB using its whitelisted IP and returns the sales data!
-          </p>
-        </div>
-
-        <!-- Ready to use Code Snippet -->
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
-            <label class="text-xs font-bold text-slate-700">
-              WordPress Bridge Code (Add to admin.birmas.id):
-            </label>
-            <button
-              @click="copyBridgeSnippet"
-              type="button"
-              class="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-xs font-bold flex items-center gap-1 cursor-pointer"
-            >
-              <Copy class="w-3 h-3" />
-              <span>{{ copiedCode ? 'Copied to Clipboard!' : 'Copy Code' }}</span>
-            </button>
-          </div>
-          <pre class="bg-slate-900 text-slate-100 text-[11px] font-mono p-4 rounded-2xl overflow-x-auto max-h-64 leading-relaxed">{{ wpSnippetCode }}</pre>
-          <p class="text-[11px] text-slate-500">
-            Paste this snippet into your WordPress theme's <code class="bg-slate-100 px-1 py-0.5 rounded">functions.php</code> or via the <code class="bg-slate-100 px-1 py-0.5 rounded">WPCode</code> plugin. Once added, clicking <strong>"Sync via Birmas Server"</strong> will pull fresh sales records automatically!
-          </p>
-        </div>
-
-        <div class="flex justify-end pt-2 border-t border-slate-100">
-          <button
-            @click="isHelpModalOpen = false"
-            type="button"
-            class="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold"
-          >
-            Got It
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- Upload Sales CSV Modal -->
     <UploadSalesCsvModal
       :is-open="isUploadModalOpen"
-      :stores="stores"
+      :stores="availableStores"
       @close="isUploadModalOpen = false"
       @imported="handleCsvImported"
     />

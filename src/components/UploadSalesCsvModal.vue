@@ -76,14 +76,21 @@ function parseNumber(val) {
   return isNaN(num) ? 0 : num;
 }
 
-// Detect Store ID from text
+// Dynamically extract store branch from CSV without hardcoding any branch names
 function detectStore(storeName) {
-  const s = String(storeName || '').toLowerCase();
-  if (s.includes('sudirman')) return { id: 'birmas-sudirman', name: 'Birmas Sudirman' };
-  if (s.includes('kwitang')) return { id: 'birmas-kwitang', name: 'Birmas Kwitang' };
-  if (s.includes('nomadic') || s.includes('bandung')) return { id: 'birmas-nomadic', name: 'Birmas Nomadic (Bandung)' };
-  if (s.includes('lebak') || s.includes('bulus')) return { id: 'birmas-lebak-bulus', name: 'Birmas Lebak Bulus' };
-  return { id: 'birmas-kuningan', name: 'Birmas Kuningan' };
+  const raw = String(storeName || '').trim();
+  if (!raw) return { id: 'branch-default', name: 'Main Branch' };
+
+  // Title case if all uppercase (e.g. "KUNINGAN" -> "Kuningan", "LEBAK BULUS" -> "Lebak Bulus")
+  const formattedName = raw === raw.toUpperCase() && raw.length > 1
+    ? raw.split(' ').map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')
+    : raw;
+
+  const cleanId = raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return {
+    id: cleanId ? `store-${cleanId}` : 'branch-default',
+    name: formattedName,
+  };
 }
 
 // Parse CSV content into rows
@@ -181,7 +188,7 @@ function parseCSV(text) {
     const rawSalesNo = colIndex.salesNo !== -1 ? cols[colIndex.salesNo] : '';
     if (!rawBillNo && !rawSalesNo && !cols[colIndex.menu || 0]) continue;
 
-    const rawBranch = colIndex.branch !== -1 ? cols[colIndex.branch] : 'KUNINGAN';
+    const rawBranch = colIndex.branch !== -1 ? cols[colIndex.branch] : 'Branch';
     const storeInfo = detectStore(rawBranch);
 
     const qty = parseNumber(colIndex.qty !== -1 ? cols[colIndex.qty] : 1) || 1;

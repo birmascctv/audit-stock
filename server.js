@@ -976,7 +976,7 @@ async function startServer() {
       console.log(`[Sales Push] Received ${rawList.length} transactions pushed from Birmas server!`);
 
       const normalized = rawList.map((tx, idx) => {
-        const storeKey = String(tx.store_id || tx.store_name || tx.location || '').toLowerCase();
+        const storeKey = String(tx.store_id || tx.store_name || tx.branch || tx.location || '').toLowerCase();
         let storeId = 'birmas-kuningan';
         let storeName = 'Birmas Kuningan';
 
@@ -986,29 +986,39 @@ async function startServer() {
         } else if (storeKey.includes('kwitang')) {
           storeId = 'birmas-kwitang';
           storeName = 'Birmas Kwitang';
+        } else if (storeKey.includes('nomadic') || storeKey.includes('bandung')) {
+          storeId = 'birmas-nomadic';
+          storeName = 'Birmas Nomadic (Bandung)';
         } else if (storeKey.includes('lebak') || storeKey.includes('bulus')) {
           storeId = 'birmas-lebak-bulus';
           storeName = 'Birmas Lebak Bulus';
         }
 
+        const brandName = tx.brand || tx.menu_category_detail || tx.menuCategoryDetail || '';
+        const visitPurpose = tx.visit_purpose || tx.visitPurpose || tx.order_mode || tx.orderMode || 'DINE IN';
+        const itemName = tx.item_name || tx.menu || tx.itemName || tx.product_name || 'Retail Item';
+        const variantName = tx.variant || tx.menu || tx.product_variant || '';
+
         return {
-          id: tx.id || `push-${tx.bill_no || Date.now()}-${idx}`,
-          bill_no: tx.bill_no || tx.billNo || tx.invoice_no || `ESB-${Date.now()}-${idx}`,
-          date: tx.date || tx.created_at || new Date().toISOString(),
+          id: tx.id || `push-${tx.bill_no || tx.billNumber || Date.now()}-${idx}`,
+          bill_no: tx.bill_no || tx.billNumber || tx.bill_number || tx.invoice_no || `ESB-${Date.now()}-${idx}`,
+          date: tx.date || tx.sales_date_in || tx.salesDateIn || tx.sales_date || tx.created_at || new Date().toISOString(),
           store_id: storeId,
           store_name: tx.store_name || storeName,
-          item_name: tx.item_name || tx.itemName || tx.product_name || 'Retail Item',
-          variant: tx.variant || tx.product_variant || '',
-          category: tx.category || 'Beverage',
+          item_name: itemName,
+          variant: variantName,
+          brand: brandName,
+          category: tx.category || tx.menu_category || tx.menuCategory || 'Beverage',
           barcode: tx.barcode || '',
           qty: Number(tx.qty || tx.quantity) || 1,
           unit_price: Number(tx.unit_price || tx.price) || 0,
           discount: Number(tx.discount) || 0,
           tax: Number(tx.tax) || 0,
-          subtotal: Number(tx.subtotal) || ((Number(tx.qty) || 1) * (Number(tx.unit_price) || 0)),
-          total: Number(tx.total) || ((Number(tx.qty) || 1) * (Number(tx.unit_price) || 0)),
+          subtotal: Number(tx.subtotal) || ((Number(tx.qty) || 1) * (Number(tx.unit_price || tx.price) || 0)),
+          total: Number(tx.total || tx.nett_sales || tx.nettSales) || ((Number(tx.qty) || 1) * (Number(tx.unit_price || tx.price) || 0)),
           payment_method: tx.payment_method || tx.paymentMethod || 'QRIS BCA',
-          cashier: tx.cashier || 'Kasir',
+          visit_purpose: visitPurpose,
+          cashier: tx.cashier || tx.waiter || 'Kasir',
         };
       });
 
@@ -1108,6 +1118,8 @@ async function startServer() {
         endDate: req.query.endDate,
         search: req.query.search,
         category: req.query.category,
+        brand: req.query.brand,
+        visitPurpose: req.query.visitPurpose,
         paymentMethod: req.query.paymentMethod,
         limit: req.query.limit || 200,
         offset: req.query.offset || 0,
@@ -1125,9 +1137,21 @@ async function startServer() {
         storeId: req.query.storeId,
         startDate: req.query.startDate,
         endDate: req.query.endDate,
+        visitPurpose: req.query.visitPurpose,
+        category: req.query.category,
+        paymentMethod: req.query.paymentMethod,
       };
       const summary = db.getSalesSummary(filters);
       res.json({ success: true, summary });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete('/api/sales/clear', (req, res) => {
+    try {
+      const result = db.clearAllSalesTransactions();
+      res.json(result);
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });
     }

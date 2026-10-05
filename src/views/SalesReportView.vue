@@ -24,8 +24,11 @@ import {
   Store,
   ArrowUpRight,
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  UploadCloud,
+  Trash2,
 } from 'lucide-vue-next';
+import UploadSalesCsvModal from '../components/UploadSalesCsvModal.vue';
 
 const { currentUser, role, isSuperAdmin } = useAuth();
 const { stores } = useAuditStore();
@@ -33,12 +36,14 @@ const { stores } = useAuditStore();
 // Filters
 const selectedStoreId = ref('all');
 const selectedCategory = ref('all');
+const selectedBrand = ref('all');
+const selectedVisitPurpose = ref('all');
 const selectedPayment = ref('all');
 const searchQuery = ref('');
 const datePreset = ref('7d');
 const startDate = ref('');
 const endDate = ref('');
-const activeViewTab = ref('table'); // 'table' | 'byStore' | 'byPayment' | 'topItems'
+const activeViewTab = ref('table'); // 'table' | 'byChannel' | 'byStore' | 'byBrand' | 'topItems' | 'byPayment'
 
 // State
 const transactions = ref([]);
@@ -51,14 +56,72 @@ const summary = ref({
   totalTax: 0,
   totalNetSales: 0,
   byStore: [],
+  byChannel: [],
   byPayment: [],
+  byBrand: [],
   topItems: [],
 });
 const isLoading = ref(false);
 const isSyncing = ref(false);
 const syncMessage = ref('');
 const isHelpModalOpen = ref(false);
+const isUploadModalOpen = ref(false);
 const copiedCode = ref(false);
+
+async function handleClearData() {
+  if (!confirm('Are you sure you want to clear all imported sales records? The table will become empty and ready for fresh CSV upload.')) return;
+  try {
+    const res = await fetch('/api/sales/clear', { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) {
+      syncMessage.value = 'Sales table cleared successfully. Ready for CSV upload.';
+      await loadSalesReport();
+    }
+  } catch (err) {
+    alert('Failed to clear: ' + err.message);
+  }
+}
+
+function handleCsvImported(rows) {
+  loadSalesReport();
+  syncMessage.value = `Successfully imported and synchronized ${rows.length} sales records from CSV!`;
+}
+
+// Categories list
+const categories = computed(() => {
+  const set = new Set();
+  transactions.value.forEach((t) => {
+    if (t.category) set.add(t.category);
+  });
+  return Array.from(set);
+});
+
+// Brands list
+const brands = computed(() => {
+  const set = new Set();
+  transactions.value.forEach((t) => {
+    if (t.brand) set.add(t.brand);
+  });
+  return Array.from(set);
+});
+
+// Visit Purposes / Channels list
+const visitPurposes = computed(() => {
+  const set = new Set();
+  transactions.value.forEach((t) => {
+    if (t.visit_purpose) set.add(t.visit_purpose);
+  });
+  return Array.from(set);
+});
+
+// Payment methods list
+const paymentMethods = computed(() => {
+  const set = new Set();
+  transactions.value.forEach((t) => {
+    if (t.payment_method) set.add(t.payment_method);
+  });
+  return Array.from(set);
+});
 
 // Format Rupiah
 function formatRupiah(amount) {
@@ -128,6 +191,12 @@ async function loadSalesReport() {
     if (selectedCategory.value && selectedCategory.value !== 'all') {
       query.set('category', selectedCategory.value);
     }
+    if (selectedBrand.value && selectedBrand.value !== 'all') {
+      query.set('brand', selectedBrand.value);
+    }
+    if (selectedVisitPurpose.value && selectedVisitPurpose.value !== 'all') {
+      query.set('visitPurpose', selectedVisitPurpose.value);
+    }
     if (selectedPayment.value && selectedPayment.value !== 'all') {
       query.set('paymentMethod', selectedPayment.value);
     }
@@ -178,16 +247,14 @@ function handleExportCSV() {
     'No': idx + 1,
     'Bill No': tx.bill_no,
     'Date Time': tx.date,
-    'Store Location': tx.store_name,
+    'Branch': tx.store_name,
+    'Channel': tx.visit_purpose || 'DINE IN',
+    'Brand': tx.brand || '',
     'Product Name': tx.item_name,
     'Variant': tx.variant || '',
     'Category': tx.category || '',
-    'Barcode': tx.barcode || '',
     'Qty': tx.qty,
     'Unit Price': tx.unit_price,
-    'Discount': tx.discount,
-    'Tax': tx.tax,
-    'Subtotal': tx.subtotal,
     'Total': tx.total,
     'Payment Method': tx.payment_method,
     'Cashier': tx.cashier,
@@ -241,24 +308,6 @@ function copyBridgeSnippet() {
   }
 }
 
-// Categories list
-const categories = computed(() => {
-  const set = new Set();
-  transactions.value.forEach((t) => {
-    if (t.category) set.add(t.category);
-  });
-  return Array.from(set);
-});
-
-// Payment methods list
-const paymentMethods = computed(() => {
-  const set = new Set();
-  transactions.value.forEach((t) => {
-    if (t.payment_method) set.add(t.payment_method);
-  });
-  return Array.from(set);
-});
-
 onMounted(() => {
   applyDatePreset('7d');
 });
@@ -297,26 +346,15 @@ onMounted(() => {
 
       <!-- Action Buttons -->
       <div class="flex flex-wrap items-center gap-2.5">
-        <!-- Birmas Server Sync Bridge Button -->
+        <!-- Upload Sales CSV (Manual Upload for Sales Admin) -->
         <button
-          @click="handleSyncFromBirmas"
-          :disabled="isSyncing"
+          @click="isUploadModalOpen = true"
           type="button"
-          class="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-teal-600/20 disabled:opacity-50 transition-all cursor-pointer"
+          class="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-teal-600/20 transition-all cursor-pointer"
+          title="Upload ESB Sales Recapitulation CSV file"
         >
-          <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isSyncing }" />
-          <span>{{ isSyncing ? 'Pulling from Birmas Server...' : 'Sync via Birmas Server' }}</span>
-        </button>
-
-        <!-- Help & Architecture Modal Button -->
-        <button
-          @click="isHelpModalOpen = true"
-          type="button"
-          class="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-          title="How Birmas Server proxies ESB data"
-        >
-          <HelpCircle class="w-3.5 h-3.5 text-cyan-600" />
-          <span>Server Setup Guide</span>
+          <UploadCloud class="w-4 h-4" />
+          <span>Upload Sales CSV</span>
         </button>
 
         <!-- Export CSV Button (Allowed for Sales Report) -->
@@ -329,6 +367,29 @@ onMounted(() => {
         >
           <Download class="w-3.5 h-3.5 text-emerald-600" />
           <span>Export CSV</span>
+        </button>
+
+        <!-- Clear All Sales Data Button -->
+        <button
+          v-if="transactions.length > 0"
+          @click="handleClearData"
+          type="button"
+          class="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-rose-50 hover:text-rose-600 text-slate-600 border border-slate-300 hover:border-rose-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+          title="Reset sales table to empty"
+        >
+          <Trash2 class="w-3.5 h-3.5 text-rose-500" />
+          <span>Clear Data</span>
+        </button>
+
+        <!-- Help & Architecture Modal Button -->
+        <button
+          @click="isHelpModalOpen = true"
+          type="button"
+          class="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+          title="How Birmas Server proxies ESB data"
+        >
+          <HelpCircle class="w-3.5 h-3.5 text-cyan-600" />
+          <span>Setup Guide</span>
         </button>
       </div>
     </div>
@@ -439,6 +500,42 @@ onMounted(() => {
                 <option value="all">All Stores (Entire Chain)</option>
                 <option v-for="st in stores" :key="st.id" :value="st.id">
                   {{ st.name }}
+                </option>
+              </select>
+              <ChevronDown class="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+
+          <!-- Channel / Visit Purpose filter -->
+          <div v-if="visitPurposes.length > 0">
+            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Sales Channel:</label>
+            <div class="relative">
+              <select
+                v-model="selectedVisitPurpose"
+                @change="loadSalesReport"
+                class="appearance-none pl-3 pr-8 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 cursor-pointer focus:outline-none focus:border-teal-500"
+              >
+                <option value="all">All Channels (Dine In & Delivery)</option>
+                <option v-for="vp in visitPurposes" :key="vp" :value="vp">
+                  {{ vp }}
+                </option>
+              </select>
+              <ChevronDown class="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+
+          <!-- Brand filter -->
+          <div v-if="brands.length > 0">
+            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Brand:</label>
+            <div class="relative">
+              <select
+                v-model="selectedBrand"
+                @change="loadSalesReport"
+                class="appearance-none pl-3 pr-8 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 cursor-pointer focus:outline-none focus:border-teal-500"
+              >
+                <option value="all">All Brands</option>
+                <option v-for="br in brands" :key="br" :value="br">
+                  {{ br }}
                 </option>
               </select>
               <ChevronDown class="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -568,14 +665,22 @@ onMounted(() => {
     <div class="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden flex flex-col">
       <!-- Tab Header -->
       <div class="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
-        <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 self-start">
+        <div class="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 self-start">
           <button
             @click="activeViewTab = 'table'"
             type="button"
             class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
             :class="activeViewTab === 'table' ? 'bg-white text-teal-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
           >
-            Itemized Transactions ({{ transactions.length }})
+            Itemized Sales ({{ transactions.length }})
+          </button>
+          <button
+            @click="activeViewTab = 'byChannel'"
+            type="button"
+            class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
+            :class="activeViewTab === 'byChannel' ? 'bg-white text-teal-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
+          >
+            By Channel ({{ (summary.byChannel || []).length }})
           </button>
           <button
             @click="activeViewTab = 'byStore'"
@@ -583,15 +688,15 @@ onMounted(() => {
             class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
             :class="activeViewTab === 'byStore' ? 'bg-white text-teal-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
           >
-            By Store
+            By Branch ({{ (summary.byStore || []).length }})
           </button>
           <button
-            @click="activeViewTab = 'byPayment'"
+            @click="activeViewTab = 'byBrand'"
             type="button"
             class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
-            :class="activeViewTab === 'byPayment' ? 'bg-white text-teal-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
+            :class="activeViewTab === 'byBrand' ? 'bg-white text-teal-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
           >
-            By Payment Method
+            By Brand ({{ (summary.byBrand || []).length }})
           </button>
           <button
             @click="activeViewTab = 'topItems'"
@@ -599,7 +704,15 @@ onMounted(() => {
             class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
             :class="activeViewTab === 'topItems' ? 'bg-white text-teal-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
           >
-            Top Items
+            Top Products
+          </button>
+          <button
+            @click="activeViewTab = 'byPayment'"
+            type="button"
+            class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
+            :class="activeViewTab === 'byPayment' ? 'bg-white text-teal-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
+          >
+            Payment Methods
           </button>
         </div>
 
@@ -613,18 +726,18 @@ onMounted(() => {
         <table class="w-full text-left text-xs text-slate-700 border-collapse">
           <thead class="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
             <tr>
-              <th class="py-3 px-4 w-12 text-center">No</th>
-              <th class="py-3 px-4 font-mono">Bill No</th>
-              <th class="py-3 px-4">Date Time</th>
-              <th class="py-3 px-4">Store Location</th>
-              <th class="py-3 px-4">Product & Variant</th>
-              <th class="py-3 px-4">Category</th>
-              <th class="py-3 px-4 text-center">Qty</th>
-              <th class="py-3 px-4 text-right">Price</th>
-              <th class="py-3 px-4 text-right">Disc</th>
-              <th class="py-3 px-4 text-right">Total (IDR)</th>
-              <th class="py-3 px-4">Payment</th>
-              <th class="py-3 px-4">Cashier</th>
+              <th class="py-3 px-3 w-10 text-center">No</th>
+              <th class="py-3 px-3">Date Time</th>
+              <th class="py-3 px-3 font-mono">Bill Number</th>
+              <th class="py-3 px-3">Branch</th>
+              <th class="py-3 px-3">Channel (Visit)</th>
+              <th class="py-3 px-4">Brand & Variant</th>
+              <th class="py-3 px-3">Category</th>
+              <th class="py-3 px-3 text-center">Qty</th>
+              <th class="py-3 px-3 text-right">Price</th>
+              <th class="py-3 px-3 text-right">Total (IDR)</th>
+              <th class="py-3 px-3">Payment Method</th>
+              <th class="py-3 px-3">Cashier</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
@@ -633,62 +746,142 @@ onMounted(() => {
               :key="tx.id || index"
               class="hover:bg-slate-50/80 transition-colors"
             >
-              <td class="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
+              <td class="py-3 px-3 text-center font-mono text-slate-400 text-[11px]">
                 {{ index + 1 }}
               </td>
-              <td class="py-3 px-4 font-mono font-bold text-slate-900 text-[11px]">
-                {{ tx.bill_no }}
-              </td>
-              <td class="py-3 px-4 text-slate-600 whitespace-nowrap text-[11px]">
+              <td class="py-3 px-3 text-slate-600 whitespace-nowrap text-[11px]">
                 {{ formatSimpleDate(tx.date) }}
               </td>
-              <td class="py-3 px-4">
-                <span class="font-bold text-slate-900">{{ tx.store_name }}</span>
+              <td class="py-3 px-3 font-mono font-bold text-slate-900 text-[11px]">
+                {{ tx.bill_no }}
+              </td>
+              <td class="py-3 px-3">
+                <span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-800">
+                  {{ tx.store_name }}
+                </span>
+              </td>
+              <td class="py-3 px-3 whitespace-nowrap">
+                <span
+                  class="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                  :class="{
+                    'bg-blue-50 text-blue-700 border border-blue-200': tx.visit_purpose === 'DINE IN',
+                    'bg-orange-50 text-orange-700 border border-orange-200': tx.visit_purpose === 'SHOPEEFOOD',
+                    'bg-emerald-50 text-emerald-700 border border-emerald-200': tx.visit_purpose === 'GOFOOD',
+                    'bg-green-50 text-green-700 border border-green-200': tx.visit_purpose === 'GRABFOOD' || tx.visit_purpose === 'GRABMART',
+                    'bg-indigo-50 text-indigo-700 border border-indigo-200': tx.visit_purpose === 'WA ORDER',
+                    'bg-purple-50 text-purple-700 border border-purple-200': tx.visit_purpose === 'TEMAN',
+                  }"
+                >
+                  {{ tx.visit_purpose || 'DINE IN' }}
+                </span>
               </td>
               <td class="py-3 px-4">
-                <div class="font-bold text-slate-900">{{ tx.item_name }}</div>
-                <div v-if="tx.variant" class="text-[10px] text-slate-500">{{ tx.variant }}</div>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span v-if="tx.brand" class="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-teal-50 text-teal-800 border border-teal-200">
+                    {{ tx.brand }}
+                  </span>
+                  <span class="font-bold text-slate-900 text-xs">{{ tx.item_name }}</span>
+                </div>
               </td>
-              <td class="py-3 px-4">
+              <td class="py-3 px-3 whitespace-nowrap">
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700">
                   {{ tx.category || 'Beverage' }}
                 </span>
               </td>
-              <td class="py-3 px-4 text-center font-bold text-slate-900">
+              <td class="py-3 px-3 text-center font-extrabold text-teal-800 font-mono text-sm">
                 {{ tx.qty }}
               </td>
-              <td class="py-3 px-4 text-right font-mono text-slate-700">
+              <td class="py-3 px-3 text-right font-mono text-slate-600 text-xs">
                 {{ formatRupiah(tx.unit_price) }}
               </td>
-              <td class="py-3 px-4 text-right font-mono text-rose-600">
-                {{ tx.discount > 0 ? '-' + formatRupiah(tx.discount) : '-' }}
-              </td>
-              <td class="py-3 px-4 text-right font-mono font-bold text-emerald-700">
+              <td class="py-3 px-3 text-right font-mono font-black text-slate-900 text-xs">
                 {{ formatRupiah(tx.total) }}
               </td>
-              <td class="py-3 px-4">
-                <span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+              <td class="py-3 px-3">
+                <span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 max-w-[150px] truncate block" :title="tx.payment_method">
                   {{ tx.payment_method || 'QRIS' }}
                 </span>
               </td>
-              <td class="py-3 px-4 text-slate-500 text-[11px]">
+              <td class="py-3 px-3 text-slate-500 text-[11px] whitespace-nowrap">
                 {{ tx.cashier || 'Kasir' }}
               </td>
             </tr>
 
             <!-- Empty State -->
             <tr v-if="transactions.length === 0">
-              <td colspan="12" class="py-12 text-center text-slate-400">
-                <Receipt class="w-10 h-10 mx-auto text-slate-300 mb-2" />
-                <p class="font-bold text-slate-600">No sales transactions found</p>
-                <p class="text-xs text-slate-400 mt-0.5">Try adjusting your date range or store filter.</p>
+              <td colspan="12" class="py-16 text-center">
+                <div class="max-w-md mx-auto space-y-3">
+                  <div class="w-14 h-14 rounded-2xl bg-teal-50 border border-teal-200 text-teal-600 flex items-center justify-center mx-auto shadow-xs">
+                    <UploadCloud class="w-7 h-7 text-teal-600" />
+                  </div>
+                  <h4 class="font-extrabold text-slate-800 text-base">Sales Table is Clean & Ready</h4>
+                  <p class="text-xs text-slate-500">
+                    No mock or hardcoded data. Upload your ESB Sales Recapitulation Detail CSV file to view real transactions, channel distributions, and brand reports.
+                  </p>
+                  <button
+                    @click="isUploadModalOpen = true"
+                    type="button"
+                    class="mt-2 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold shadow-md shadow-teal-600/20 transition-all cursor-pointer"
+                  >
+                    <UploadCloud class="w-4 h-4" />
+                    <span>Upload ESB Sales CSV</span>
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <!-- TAB 2: Sales by Store Location -->
+      <!-- TAB 2: Sales by Channel (Visit Purpose) -->
+      <div v-else-if="activeViewTab === 'byChannel'" class="p-6 space-y-5">
+        <div class="flex items-center justify-between">
+          <div>
+            <h4 class="text-sm font-extrabold text-slate-900">Breakdown by Sales Channel (Visit Purpose)</h4>
+            <p class="text-xs text-slate-500">Comparison of Dine-in vs Delivery platforms (ShopeeFood, GoFood, GrabFood, GrabMart, WA Order)</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div
+            v-for="ch in summary.byChannel || []"
+            :key="ch.channel"
+            class="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-col justify-between hover:shadow-xs transition-shadow"
+          >
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span
+                  class="px-2.5 py-1 rounded-full text-xs font-black tracking-wide"
+                  :class="{
+                    'bg-blue-100 text-blue-800': ch.channel === 'DINE IN',
+                    'bg-orange-100 text-orange-800': ch.channel === 'SHOPEEFOOD',
+                    'bg-emerald-100 text-emerald-800': ch.channel === 'GOFOOD',
+                    'bg-green-100 text-green-800': ch.channel === 'GRABFOOD' || ch.channel === 'GRABMART',
+                    'bg-indigo-100 text-indigo-800': ch.channel === 'WA ORDER',
+                    'bg-purple-100 text-purple-800': ch.channel === 'TEMAN',
+                  }"
+                >
+                  {{ ch.channel }}
+                </span>
+                <span class="text-xs font-mono font-bold text-slate-500">{{ ch.bills }} bills</span>
+              </div>
+              <div class="mt-4">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Total Revenue</span>
+                <span class="text-xl font-black text-slate-900 font-mono">{{ formatRupiah(ch.revenue) }}</span>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-3 mt-4 border-t border-slate-200 text-xs">
+              <span class="text-slate-500">Units Sold: <strong class="text-slate-800 font-mono">{{ ch.units }}</strong></span>
+              <span class="text-slate-500">
+                Share: <strong class="text-teal-700 font-mono">{{ summary.totalNetSales > 0 ? ((ch.revenue / summary.totalNetSales) * 100).toFixed(1) : 0 }}%</strong>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: Sales by Store Location -->
       <div v-else-if="activeViewTab === 'byStore'" class="p-6 space-y-4">
         <h4 class="text-sm font-bold text-slate-900 mb-2">Revenue Breakdown by Store Location</h4>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -718,7 +911,76 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- TAB 3: Sales by Payment Method -->
+      <!-- TAB 4: Sales by Brand -->
+      <div v-else-if="activeViewTab === 'byBrand'" class="p-6 space-y-4">
+        <h4 class="text-sm font-bold text-slate-900 mb-2">Top Selling Product Brands (Menu Category Detail)</h4>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead class="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+              <tr>
+                <th class="py-3 px-4 w-12 text-center">Rank</th>
+                <th class="py-3 px-4">Brand Name</th>
+                <th class="py-3 px-4">Category</th>
+                <th class="py-3 px-4 text-center">Units Sold</th>
+                <th class="py-3 px-4 text-right">Revenue</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr v-for="(b, idx) in summary.byBrand || []" :key="idx" class="hover:bg-slate-50">
+                <td class="py-3 px-4 text-center font-bold text-teal-700 font-mono">#{{ idx + 1 }}</td>
+                <td class="py-3 px-4 font-black text-slate-900">{{ b.brand }}</td>
+                <td class="py-3 px-4">
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700">
+                    {{ b.category || 'Beverage' }}
+                  </span>
+                </td>
+                <td class="py-3 px-4 text-center font-bold text-teal-800 font-mono">{{ b.units }}</td>
+                <td class="py-3 px-4 text-right font-black text-slate-900 font-mono">{{ formatRupiah(b.revenue) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 5: Top Selling Products -->
+      <div v-else-if="activeViewTab === 'topItems'" class="p-6 space-y-4">
+        <h4 class="text-sm font-bold text-slate-900 mb-2">Top Selling Products (Menu Variants)</h4>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead class="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+              <tr>
+                <th class="py-3 px-4 w-12 text-center">Rank</th>
+                <th class="py-3 px-4">Brand</th>
+                <th class="py-3 px-4">Menu Variant</th>
+                <th class="py-3 px-4">Category</th>
+                <th class="py-3 px-4 text-center">Units Sold</th>
+                <th class="py-3 px-4 text-right">Total Revenue</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr v-for="(item, idx) in summary.topItems || []" :key="idx" class="hover:bg-slate-50">
+                <td class="py-3 px-4 text-center font-bold text-teal-700 font-mono">#{{ idx + 1 }}</td>
+                <td class="py-3 px-4">
+                  <span v-if="item.brand" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                    {{ item.brand }}
+                  </span>
+                  <span v-else class="text-slate-400">-</span>
+                </td>
+                <td class="py-3 px-4 font-bold text-slate-900">{{ item.item_name }}</td>
+                <td class="py-3 px-4">
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700">
+                    {{ item.category || 'Beverage' }}
+                  </span>
+                </td>
+                <td class="py-3 px-4 text-center font-bold text-teal-800 font-mono">{{ item.totalQty }}</td>
+                <td class="py-3 px-4 text-right font-bold text-emerald-700 font-mono">{{ formatRupiah(item.totalRevenue) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 6: Sales by Payment Method -->
       <div v-else-if="activeViewTab === 'byPayment'" class="p-6 space-y-4">
         <h4 class="text-sm font-bold text-slate-900 mb-2">Breakdown by Payment Method</h4>
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -738,39 +1000,6 @@ onMounted(() => {
               <span class="text-base font-black text-slate-900 font-mono">{{ formatRupiah(pm.totalAmount) }}</span>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- TAB 4: Top Selling Items -->
-      <div v-else-if="activeViewTab === 'topItems'" class="p-6 space-y-4">
-        <h4 class="text-sm font-bold text-slate-900 mb-2">Top Selling Items</h4>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs border-collapse">
-            <thead class="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-              <tr>
-                <th class="py-3 px-4 w-12 text-center">Rank</th>
-                <th class="py-3 px-4">Product Name</th>
-                <th class="py-3 px-4">Variant</th>
-                <th class="py-3 px-4">Category</th>
-                <th class="py-3 px-4 text-center">Units Sold</th>
-                <th class="py-3 px-4 text-right">Total Revenue</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100">
-              <tr v-for="(item, idx) in summary.topItems || []" :key="idx" class="hover:bg-slate-50">
-                <td class="py-3 px-4 text-center font-bold text-teal-700 font-mono">#{{ idx + 1 }}</td>
-                <td class="py-3 px-4 font-bold text-slate-900">{{ item.item_name }}</td>
-                <td class="py-3 px-4 text-slate-500">{{ item.variant || '-' }}</td>
-                <td class="py-3 px-4">
-                  <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700">
-                    {{ item.category || 'Beverage' }}
-                  </span>
-                </td>
-                <td class="py-3 px-4 text-center font-bold text-slate-900 font-mono">{{ item.totalQty }}</td>
-                <td class="py-3 px-4 text-right font-bold text-emerald-700 font-mono">{{ formatRupiah(item.totalRevenue) }}</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
     </div>
@@ -846,5 +1075,13 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- Upload Sales CSV Modal -->
+    <UploadSalesCsvModal
+      :is-open="isUploadModalOpen"
+      :stores="stores"
+      @close="isUploadModalOpen = false"
+      @imported="handleCsvImported"
+    />
   </div>
 </template>

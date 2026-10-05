@@ -986,12 +986,24 @@ async function startServer() {
         } else if (storeKey.includes('kwitang')) {
           storeId = 'birmas-kwitang';
           storeName = 'Birmas Kwitang';
-        } else if (storeKey.includes('nomadic') || storeKey.includes('bandung')) {
-          storeId = 'birmas-nomadic';
-          storeName = 'Birmas Nomadic (Bandung)';
+        } else if (storeKey.includes('kuningan') || storeKey.includes('kunngan')) {
+          storeId = 'birmas-kuningan';
+          storeName = 'Birmas Kuningan';
         } else if (storeKey.includes('lebak') || storeKey.includes('bulus')) {
           storeId = 'birmas-lebak-bulus';
           storeName = 'Birmas Lebak Bulus';
+        } else if (storeKey.includes('gading') || storeKey.includes('kgading')) {
+          storeId = 'birmas-kelapa-gading';
+          storeName = 'Birmas Kelapa Gading';
+        } else if (storeKey.includes('nomadic') || storeKey.includes('bandung')) {
+          storeId = 'birmas-nomadic';
+          storeName = 'Birmas Nomadic';
+        } else if (storeKey.includes('nusa') || storeKey.includes('bali')) {
+          storeId = 'birmas-nusadua';
+          storeName = 'Birmas Nusa Dua';
+        } else if (tx.store_name || tx.branch) {
+          storeName = String(tx.store_name || tx.branch).trim();
+          storeId = `store-${storeName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
         }
 
         const brandName = tx.brand || tx.menu_category_detail || tx.menuCategoryDetail || '';

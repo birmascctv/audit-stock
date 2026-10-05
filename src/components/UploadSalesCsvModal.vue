@@ -76,19 +76,27 @@ function parseNumber(val) {
   return isNaN(num) ? 0 : num;
 }
 
-// Dynamically extract store branch from CSV without hardcoding any branch names
+// Dynamically extract store branch from CSV and map to standard Birmas branches
 function detectStore(storeName) {
   const raw = String(storeName || '').trim();
-  if (!raw) return { id: 'branch-default', name: 'Main Branch' };
+  if (!raw) return { id: 'birmas-kuningan', name: 'Birmas Kuningan' };
+  const s = raw.toLowerCase();
+  if (s.includes('sudirman')) return { id: 'birmas-sudirman', name: 'Birmas Sudirman' };
+  if (s.includes('kwitang')) return { id: 'birmas-kwitang', name: 'Birmas Kwitang' };
+  if (s.includes('kuningan') || s.includes('kunngan')) return { id: 'birmas-kuningan', name: 'Birmas Kuningan' };
+  if (s.includes('lebak') || s.includes('bulus')) return { id: 'birmas-lebak-bulus', name: 'Birmas Lebak Bulus' };
+  if (s.includes('gading') || s.includes('kgading')) return { id: 'birmas-kelapa-gading', name: 'Birmas Kelapa Gading' };
+  if (s.includes('nomadic') || s.includes('bandung')) return { id: 'birmas-nomadic', name: 'Birmas Nomadic' };
+  if (s.includes('nusa') || s.includes('bali')) return { id: 'birmas-nusadua', name: 'Birmas Nusa Dua' };
 
-  // Title case if all uppercase (e.g. "KUNINGAN" -> "Kuningan", "LEBAK BULUS" -> "Lebak Bulus")
+  // Title case fallback
   const formattedName = raw === raw.toUpperCase() && raw.length > 1
     ? raw.split(' ').map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')
     : raw;
 
   const cleanId = raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   return {
-    id: cleanId ? `store-${cleanId}` : 'branch-default',
+    id: cleanId ? `store-${cleanId}` : 'birmas-default',
     name: formattedName,
   };
 }
@@ -153,13 +161,13 @@ function parseCSV(text) {
   const colIndex = {
     salesNo: headers.findIndex((h) => h === 'salesnumber' || h.includes('salesno')),
     billNo: headers.findIndex((h) => h === 'billnumber' || h.includes('bill') || h.includes('faktur') || h.includes('invoice')),
-    salesDate: headers.findIndex((h) => h === 'salesdate'),
-    salesDateIn: headers.findIndex((h) => h === 'salesdatein' || h.includes('datein') || h.includes('datetime') || h.includes('tanggal')),
+    salesDate: headers.findIndex((h) => h === 'salesdate' || h === 'sales_date'),
+    salesDateIn: headers.findIndex((h) => h === 'salesdatein' || h === 'sales_date_in' || h.includes('datein') || h.includes('datetime') || h.includes('tanggal')),
     branch: headers.findIndex((h) => h === 'branch' || h.includes('cabang') || h.includes('store') || h.includes('outlet')),
-    visitPurpose: headers.findIndex((h) => h === 'visitpurpose' || h.includes('ordermode') || h.includes('channel')),
-    payment: headers.findIndex((h) => h === 'paymentmethod' || h.includes('pembayaran') || h.includes('payment')),
-    menuCategory: headers.findIndex((h) => h === 'menucategory' || h === 'category' || h.includes('kategori')),
-    menuCategoryDetail: headers.findIndex((h) => h === 'menucategorydetail' || h === 'brand' || h.includes('categorydetail')),
+    visitPurpose: headers.findIndex((h) => h === 'visitpurpose' || h === 'visit_purpose' || h.includes('ordermode') || h.includes('channel')),
+    payment: headers.findIndex((h) => h === 'paymentmethod' || h === 'payment_method' || h.includes('pembayaran') || h.includes('payment')),
+    menuCategory: headers.findIndex((h) => h === 'menucategory' || h === 'menu_category' || h === 'category' || h.includes('kategori')),
+    menuCategoryDetail: headers.findIndex((h) => h === 'menucategorydetail' || h === 'menu_category_detail' || h === 'brand' || h.includes('categorydetail')),
     menu: headers.findIndex((h) => h === 'menu' || h === 'itemname' || h === 'product' || h.includes('namabarang')),
     qty: headers.findIndex((h) => h === 'qty' || h.includes('quantity') || h.includes('jumlah')),
     price: headers.findIndex((h) => h === 'price' || h.includes('harga') || h.includes('unitprice')),
@@ -181,14 +189,16 @@ function parseCSV(text) {
     }
 
     const cols = splitLine(rawLine);
-    if (cols.length < 5) continue;
+    if (cols.length < 3) continue;
 
-    // Must have at least a bill number or sales number or branch
+    const rawMenu = colIndex.menu !== -1 ? cols[colIndex.menu] : '';
+    const rawBranch = colIndex.branch !== -1 ? cols[colIndex.branch] : '';
     const rawBillNo = colIndex.billNo !== -1 ? cols[colIndex.billNo] : '';
     const rawSalesNo = colIndex.salesNo !== -1 ? cols[colIndex.salesNo] : '';
-    if (!rawBillNo && !rawSalesNo && !cols[colIndex.menu || 0]) continue;
 
-    const rawBranch = colIndex.branch !== -1 ? cols[colIndex.branch] : 'Branch';
+    // If both menu and branch are empty, skip row
+    if (!rawMenu && !rawBranch && !rawBillNo && !rawSalesNo) continue;
+
     const storeInfo = detectStore(rawBranch);
 
     const qty = parseNumber(colIndex.qty !== -1 ? cols[colIndex.qty] : 1) || 1;
@@ -203,9 +213,9 @@ function parseCSV(text) {
     if (!total) total = subtotal - discount + tax;
 
     const billNo = rawBillNo || rawSalesNo || `ESB-${Date.now()}-${i}`;
-    const dateVal = (colIndex.salesDateIn !== -1 ? cols[colIndex.salesDateIn] : '') || 
-                    (colIndex.salesDate !== -1 ? cols[colIndex.salesDate] : '') || 
-                    new Date().toISOString();
+    const rawSalesDate = colIndex.salesDate !== -1 ? cols[colIndex.salesDate] : '';
+    const rawSalesDateIn = colIndex.salesDateIn !== -1 ? cols[colIndex.salesDateIn] : '';
+    const dateVal = rawSalesDateIn || rawSalesDate || new Date().toISOString();
     
     const visitPurpose = (colIndex.visitPurpose !== -1 ? cols[colIndex.visitPurpose] : '') || 'DINE IN';
     const payment = (colIndex.payment !== -1 ? cols[colIndex.payment] : '') || 'QRIS BCA';
@@ -218,15 +228,22 @@ function parseCSV(text) {
       id: `csv-${billNo}-${i}-${Date.now().toString(36)}`,
       bill_no: billNo,
       date: dateVal,
+      sales_date: rawSalesDate || (dateVal ? dateVal.split(' ')[0] : ''),
+      sales_date_in: rawSalesDateIn || dateVal,
       store_id: storeInfo.id,
       store_name: storeInfo.name,
+      branch: storeInfo.name,
       item_name: menuVariant,
       variant: menuVariant,
+      menu: menuVariant,
       brand: brand,
+      menu_category_detail: brand,
       category: category,
+      menu_category: category,
       barcode: '',
       qty,
       unit_price: unitPrice,
+      price: unitPrice,
       discount,
       tax,
       subtotal,

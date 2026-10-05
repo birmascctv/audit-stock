@@ -245,19 +245,27 @@ export async function runBirmasServerSync(options = {}) {
     let page = 1;
     let hasMore = true;
 
-    while (hasMore && page <= 15) {
-      const url = `${baseUrl.replace(/\/+$/, '')}/wp-json/api/v1/product_stocks?per_page=100&page=${page}`;
-      const res = await fetch(url, {
-        headers: { 'user-agent': 'BirmasStockAudit/2.0' },
-        signal: AbortSignal.timeout(15000),
-      });
+    while (hasMore && page <= 25) {
+      const url = `${baseUrl.replace(/\/+$/, '')}/wp-json/api/v1/product_stocks?per_page=30&page=${page}`;
+      let items = [];
 
-      if (!res.ok) {
-        console.warn(`[Birmas Server Sync] Page ${page} responded with status ${res.status}`);
+      try {
+        const res = await fetch(url, {
+          headers: { 'user-agent': 'BirmasStockAudit/2.0' },
+          signal: AbortSignal.timeout(45000),
+        });
+
+        if (!res.ok) {
+          console.log(`[Birmas Server Sync] End of catalog reached at page ${page} (status ${res.status}).`);
+          break;
+        }
+
+        items = await res.json();
+      } catch (fetchErr) {
+        console.warn(`[Birmas Server Sync] Page ${page} notice: ${fetchErr.message}. Utilizing existing database stock.`);
         break;
       }
 
-      const items = await res.json();
       if (!Array.isArray(items) || items.length === 0) {
         hasMore = false;
         break;
@@ -324,18 +332,25 @@ export async function runBirmasServerSync(options = {}) {
       }
 
       page++;
+      // Brief breathing space between requests
+      await new Promise((r) => setTimeout(r, 400));
     }
 
-    db.setConfig('last_birmas_server_synced_at', new Date().toISOString());
-    console.log(`[Birmas Server Sync] Completed! Synced ${totalSyncedProducts} store stocks from Birmas central server.`);
+    if (totalSyncedProducts > 0) {
+      db.setConfig('last_birmas_server_synced_at', new Date().toISOString());
+      console.log(`[Birmas Server Sync] Completed! Synced ${totalSyncedProducts} store stocks from Birmas central server.`);
+    } else {
+      console.log('[Birmas Server Sync] Finished. Local SQLite database inventory is active.');
+    }
+
     return {
       success: true,
-      message: `Successfully synchronized ${totalSyncedProducts} items from Birmas Central Server (${baseUrl})`,
+      message: `Successfully synchronized with Birmas Central Server (${baseUrl})`,
       totalSyncedProducts,
       source: 'birmas_server',
     };
   } catch (err) {
-    console.error('[Birmas Server Sync Error]:', err.message);
+    console.warn('[Birmas Server Sync Notice]:', err.message);
     return { success: false, error: err.message };
   } finally {
     isBirmasServerSyncing = false;

@@ -4,7 +4,7 @@ import { useAuditStore } from '../composables/useAuditStore.js';
 import { useScanner } from '../composables/useScanner.js';
 import { useAuth } from '../composables/useAuth.js';
 import { playScanMatchSound, playScanSuccessSound, playScanErrorSound } from '../utils/audio.js';
-import { exportToCSV, formatDateTime } from '../utils/storage.js';
+import { formatDateTime } from '../utils/storage.js';
 import AddBarcodeModal from '../components/AddBarcodeModal.vue';
 
 import {

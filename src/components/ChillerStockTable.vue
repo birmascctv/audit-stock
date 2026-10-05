@@ -122,17 +122,6 @@ function handleExportCSV() {
             <Plus class="w-3.5 h-3.5 text-cyan-400" />
             <span>Add Product</span>
           </button>
-
-          <!-- Export CSV -->
-          <button
-            @click="handleExportCSV"
-            type="button"
-            class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors"
-            title="Download CSV table"
-          >
-            <Download class="w-3.5 h-3.5 text-emerald-400" />
-            <span>Export CSV</span>
-          </button>
         </div>
       </div>
 

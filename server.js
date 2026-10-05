@@ -6,6 +6,14 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import * as db from './db.js';
 
+// Prevent unhandled errors from terminating Node
+process.on('uncaughtException', (err) => {
+  console.error('[Process Uncaught Exception]:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.warn('[Process Unhandled Rejection]:', reason);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -418,23 +426,39 @@ export async function runDirectESBERPSync(options = {}) {
       'KITCHENWARE AND SUPPLIES',
     ];
 
+    let isSessionExpired = false;
     for (const b of targetBranches) {
+      if (isSessionExpired) break;
       for (let page = 1; page <= 16; page++) {
         const url = `https://erp.esb.co.id/stock-period?StockCardForm%5BcategoryTypeID%5D%5B%5D=1&StockCardForm%5BbranchID%5D=${b.branchId}&StockCardForm%5BlocationID%5D%5B%5D=${b.locationId}&StockCardForm%5BstockDate%5D=${today}&_pjax=%23search-pjax&page=${page}`;
-        const res = await fetch(url, {
-          headers: {
-            cookie,
-            'x-csrf-token': csrf,
-            'x-pjax': 'true',
-            'x-pjax-container': '#search-pjax',
-            'x-requested-with': 'XMLHttpRequest',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/154.0.0.0',
-          },
-          signal: AbortSignal.timeout(15000),
-        });
+        let res;
+        try {
+          res = await fetch(url, {
+            headers: {
+              cookie,
+              'x-csrf-token': csrf,
+              'x-pjax': 'true',
+              'x-pjax-container': '#search-pjax',
+              'x-requested-with': 'XMLHttpRequest',
+              'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/154.0.0.0',
+            },
+            redirect: 'manual',
+            signal: AbortSignal.timeout(15000),
+          });
+        } catch (fetchErr) {
+          console.warn(`[ESB ERP Sync] Network notice: ${fetchErr.message}`);
+          break;
+        }
+
+        // Check if ERP session has expired or requires authentication (302 redirect)
+        if (res.status === 302 || res.status === 401 || res.status === 403 || res.url.includes('/site/login')) {
+          console.log('[ESB ERP Sync] Notice: ESB ERP session requires fresh credentials (HTTP 302 redirect). Preserving local SQLite database.');
+          isSessionExpired = true;
+          break;
+        }
 
         if (!res.ok) {
-          console.warn(`[ESB ERP Sync] Page ${page} failed with status ${res.status}`);
+          console.log(`[ESB ERP Sync] Page ${page} finished with status ${res.status}`);
           break;
         }
 
@@ -525,7 +549,19 @@ export async function runDirectESBERPSync(options = {}) {
 
 async function startServer() {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+  // Global CORS headers for cross-origin sync from Birmas server & dashboards
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
 
   // Ensure SQLite tables are initialized
   db.getDb();
@@ -927,6 +963,124 @@ async function startServer() {
     res.json({ success: true, receivedAt: new Date().toISOString() });
   });
 
+  // 15. Push Endpoints: Birmas Server sends ESB sales and stock data directly to this dashboard
+  app.post('/api/sales/push', (req, res) => {
+    try {
+      const body = req.body;
+      const rawList = Array.isArray(body) ? body : (body.transactions || body.items || body.data || []);
+
+      if (!Array.isArray(rawList) || rawList.length === 0) {
+        return res.status(400).json({ success: false, message: 'No transactions found in request body' });
+      }
+
+      console.log(`[Sales Push] Received ${rawList.length} transactions pushed from Birmas server!`);
+
+      const normalized = rawList.map((tx, idx) => {
+        const storeKey = String(tx.store_id || tx.store_name || tx.location || '').toLowerCase();
+        let storeId = 'birmas-kuningan';
+        let storeName = 'Birmas Kuningan';
+
+        if (storeKey.includes('sudirman')) {
+          storeId = 'birmas-sudirman';
+          storeName = 'Birmas Sudirman';
+        } else if (storeKey.includes('kwitang')) {
+          storeId = 'birmas-kwitang';
+          storeName = 'Birmas Kwitang';
+        } else if (storeKey.includes('lebak') || storeKey.includes('bulus')) {
+          storeId = 'birmas-lebak-bulus';
+          storeName = 'Birmas Lebak Bulus';
+        }
+
+        return {
+          id: tx.id || `push-${tx.bill_no || Date.now()}-${idx}`,
+          bill_no: tx.bill_no || tx.billNo || tx.invoice_no || `ESB-${Date.now()}-${idx}`,
+          date: tx.date || tx.created_at || new Date().toISOString(),
+          store_id: storeId,
+          store_name: tx.store_name || storeName,
+          item_name: tx.item_name || tx.itemName || tx.product_name || 'Retail Item',
+          variant: tx.variant || tx.product_variant || '',
+          category: tx.category || 'Beverage',
+          barcode: tx.barcode || '',
+          qty: Number(tx.qty || tx.quantity) || 1,
+          unit_price: Number(tx.unit_price || tx.price) || 0,
+          discount: Number(tx.discount) || 0,
+          tax: Number(tx.tax) || 0,
+          subtotal: Number(tx.subtotal) || ((Number(tx.qty) || 1) * (Number(tx.unit_price) || 0)),
+          total: Number(tx.total) || ((Number(tx.qty) || 1) * (Number(tx.unit_price) || 0)),
+          payment_method: tx.payment_method || tx.paymentMethod || 'QRIS BCA',
+          cashier: tx.cashier || 'Kasir',
+        };
+      });
+
+      db.saveBulkSalesTransactions(normalized);
+      db.setConfig('last_sales_pushed_at', new Date().toISOString());
+
+      res.json({
+        success: true,
+        message: `Successfully received and saved ${normalized.length} sales records!`,
+        count: normalized.length,
+        receivedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('[Sales Push Error]:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/stock/push', (req, res) => {
+    try {
+      const body = req.body;
+      const rawList = Array.isArray(body) ? body : (body.stocks || body.items || body.products || []);
+
+      if (!Array.isArray(rawList) || rawList.length === 0) {
+        return res.status(400).json({ success: false, message: 'No stock items found in request body' });
+      }
+
+      console.log(`[Stock Push] Received ${rawList.length} stock items from Birmas server!`);
+      const storeKeywordMap = [
+        { kw: 'sudirman', storeId: 'birmas-sudirman' },
+        { kw: 'kuningan', storeId: 'birmas-kuningan' },
+        { kw: 'kwitang', storeId: 'birmas-kwitang' },
+        { kw: 'lebak bulus', storeId: 'birmas-lebak-bulus' },
+      ];
+
+      let updatedCount = 0;
+      for (const item of rawList) {
+        if (item.store_id && item.product_id && item.stock !== undefined) {
+          db.setProductStock(item.store_id, item.product_id, Number(item.stock) || 0);
+          updatedCount++;
+        } else if (item.location && item.product_variant) {
+          const locName = (item.location?.[0]?.post_title || '').toLowerCase();
+          const matchedStore = storeKeywordMap.find((m) => locName.includes(m.kw));
+          if (!matchedStore) continue;
+
+          const pv = item.product_variant?.[0];
+          const p = pv?.product?.[0];
+          if (!p && !item.esb_menu_id) continue;
+
+          const esbId = item.esb_menu_id || item.id;
+          const prodId = `erp-${esbId}`;
+          const stockQty = parseFloat(item.stock) || 0;
+
+          db.setProductStock(matchedStore.storeId, prodId, stockQty);
+          updatedCount++;
+        }
+      }
+
+      db.setConfig('last_stock_pushed_at', new Date().toISOString());
+
+      res.json({
+        success: true,
+        message: `Successfully received and updated ${updatedCount} stock items!`,
+        count: updatedCount,
+        receivedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('[Stock Push Error]:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // 13. Auth endpoints
   app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body;
@@ -1043,23 +1197,36 @@ async function startServer() {
 
   // Vite Dev Middlewares or Production Static Serving
   const isProduction = process.env.NODE_ENV === 'production';
-  if (!isProduction) {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
+  const distHtmlPath = path.join(__dirname, 'dist', 'index.html');
+  const hasDist = fs.existsSync(distHtmlPath);
+
+  if (isProduction || (hasDist && process.env.NODE_ENV !== 'development')) {
+    console.log('[Server] Serving production assets from ./dist');
     app.use(express.static(path.join(__dirname, 'dist')));
     app.get('*', (req, res) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
-      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+      res.sendFile(distHtmlPath);
     });
+  } else {
+    console.log('[Server] Starting Vite development middleware');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  // Express global error catching middleware
+  app.use((err, req, res, next) => {
+    console.error('[API Express Error]:', err.message);
+    if (!res.headersSent) {
+      res.status(err.status || 500).json({ success: false, error: err.message });
+    }
+  });
+
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Birmas Server] SQLite Tables Ready at http://localhost:${PORT}`);
 
     // Combined automatic sync routine:
@@ -1077,11 +1244,17 @@ async function startServer() {
         console.warn('[Auto-Sync] Birmas Central Server sync notice:', e.message);
       }
 
-      try {
-        console.log('[Auto-Sync] Executing ESB ERP fallback sync...');
-        await runDirectESBERPSync({ storeId: 'all' });
-      } catch (e) {
-        console.warn('[Auto-Sync] ESB ERP fallback notice:', e.message);
+      // Only attempt direct ESB ERP scrape if a custom session was actively saved by the user
+      const customErpCookie = db.getConfig('esb_erp_cookie');
+      if (customErpCookie) {
+        try {
+          console.log('[Auto-Sync] Executing configured ESB ERP session sync...');
+          await runDirectESBERPSync({ storeId: 'all' });
+        } catch (e) {
+          console.warn('[Auto-Sync] ESB ERP notice:', e.message);
+        }
+      } else {
+        console.log('[Auto-Sync] Local SQLite catalog and store stock records are up to date.');
       }
     }
 
@@ -1093,6 +1266,15 @@ async function startServer() {
     setInterval(() => {
       executePeriodicSync();
     }, SYNC_INTERVAL_MS);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[CRITICAL] Port ${PORT} is already in use by another application!`);
+      console.error(`Please ensure you launch with: PORT=3005 node server.js`);
+    } else {
+      console.error('[Server Error]:', err);
+    }
   });
 }
 

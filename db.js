@@ -667,14 +667,17 @@ export function insertSalesTransaction(tx) {
 }
 
 export function saveBulkSalesTransactions(txList) {
+  if (!txList || txList.length === 0) return;
   const db = getDb();
-  const insertMany = db.transaction((items) => {
-    const stmt = db.prepare(`
-      INSERT OR REPLACE INTO sales_transactions (
-        id, bill_no, date, store_id, store_name, item_name, variant, category, barcode,
-        qty, unit_price, discount, tax, subtotal, total, payment_method, cashier
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+  
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO sales_transactions (
+      id, bill_no, date, store_id, store_name, item_name, variant, category, barcode,
+      qty, unit_price, discount, tax, subtotal, total, payment_method, cashier
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const runBulk = db.transaction((items) => {
     for (const tx of items) {
       stmt.run(
         tx.id || `stx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -697,7 +700,12 @@ export function saveBulkSalesTransactions(txList) {
       );
     }
   });
-  insertMany(txList);
+
+  try {
+    runBulk(txList);
+  } catch (err) {
+    console.error('[DB Sales Bulk Error]:', err.message);
+  }
 }
 
 // Seed initial realistic sales transactions if table is empty

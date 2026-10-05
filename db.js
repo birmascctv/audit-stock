@@ -130,7 +130,36 @@ function initTables(db) {
     );
   `);
 
-  // Seed & sync required users: admin (admin666) and chrisna (auditor666)
+  // 8. Sales Transactions Table (ESB report-sales-recapitulation-detail)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_transactions (
+      id TEXT PRIMARY KEY,
+      bill_no TEXT NOT NULL,
+      date TEXT NOT NULL,
+      store_id TEXT NOT NULL,
+      store_name TEXT NOT NULL,
+      item_name TEXT NOT NULL,
+      variant TEXT,
+      category TEXT,
+      barcode TEXT,
+      qty INTEGER NOT NULL DEFAULT 1,
+      unit_price REAL NOT NULL DEFAULT 0,
+      discount REAL NOT NULL DEFAULT 0,
+      tax REAL NOT NULL DEFAULT 0,
+      subtotal REAL NOT NULL DEFAULT 0,
+      total REAL NOT NULL DEFAULT 0,
+      payment_method TEXT,
+      cashier TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_date ON sales_transactions(date);
+    CREATE INDEX IF NOT EXISTS idx_sales_store ON sales_transactions(store_id);
+    CREATE INDEX IF NOT EXISTS idx_sales_bill ON sales_transactions(bill_no);
+  `);
+
+  // Seed & sync required users:
+  // - superadmin (superadmin666): can access both Stock Audit & Sales Report
+  // - admin (admin666): can ONLY access Audit Sales Report
+  // - chrisna / auditor (auditor666): can ONLY access Stock Audit
   const upsertUser = db.prepare(`
     INSERT INTO users (id, username, email, password, name, role)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -139,8 +168,10 @@ function initTables(db) {
       name = excluded.name,
       role = excluded.role;
   `);
-  upsertUser.run('user-admin', 'admin', 'admin@birmas.id', 'admin666', 'Admin', 'admin');
-  upsertUser.run('user-chrisna', 'chrisna', 'chrisna@birmas.id', 'auditor666', 'Chrisna', 'auditor');
+  upsertUser.run('user-superadmin', 'superadmin', 'superadmin@birmas.id', 'superadmin666', 'Super Admin', 'superadmin');
+  upsertUser.run('user-admin', 'admin', 'admin@birmas.id', 'admin666', 'Admin (Sales & Finance)', 'admin');
+  upsertUser.run('user-chrisna', 'chrisna', 'chrisna@birmas.id', 'auditor666', 'Chrisna (Auditor)', 'auditor');
+  upsertUser.run('user-auditor', 'auditor', 'auditor@birmas.id', 'auditor666', 'Auditor Staff', 'auditor');
 
   // Guarantee the 4 official stores requested: Kuningan, Sudirman, Kwitang, Lebak Bulus
   const upsertStore = db.prepare(`
@@ -187,6 +218,7 @@ function initTables(db) {
   }
 
   cleanupLegacyWordPressData(db);
+  seedInitialSalesIfEmpty();
 }
 
 // Automatically purges old wp-* rows and preserves barcodes on ESB items
@@ -489,4 +521,268 @@ export function getWpConfig() {
     selectedStoreId: getConfig('selected_store_id', ''),
     autoSyncIntervalSeconds: parseInt(getConfig('auto_sync_interval_seconds', '30'), 10),
   };
+}
+
+// ==========================================
+// Sales Transactions Queries (ESB Report Sales Recapitulation Detail)
+// ==========================================
+
+export function getSalesTransactions(filters = {}) {
+  const db = getDb();
+  let sql = 'SELECT * FROM sales_transactions WHERE 1=1';
+  const params = [];
+
+  if (filters.storeId && filters.storeId !== 'all') {
+    sql += ' AND store_id = ?';
+    params.push(filters.storeId);
+  }
+
+  if (filters.startDate) {
+    sql += ' AND date >= ?';
+    params.push(filters.startDate);
+  }
+
+  if (filters.endDate) {
+    sql += ' AND date <= ?';
+    params.push(filters.endDate + 'T23:59:59.999Z');
+  }
+
+  if (filters.category && filters.category !== 'all') {
+    sql += ' AND category = ?';
+    params.push(filters.category);
+  }
+
+  if (filters.paymentMethod && filters.paymentMethod !== 'all') {
+    sql += ' AND payment_method = ?';
+    params.push(filters.paymentMethod);
+  }
+
+  if (filters.search) {
+    sql += ' AND (item_name LIKE ? OR bill_no LIKE ? OR cashier LIKE ?)';
+    const term = `%${filters.search}%`;
+    params.push(term, term, term);
+  }
+
+  sql += ' ORDER BY date DESC';
+
+  if (filters.limit) {
+    sql += ' LIMIT ?';
+    params.push(parseInt(filters.limit, 10));
+    if (filters.offset) {
+      sql += ' OFFSET ?';
+      params.push(parseInt(filters.offset, 10));
+    }
+  }
+
+  return db.prepare(sql).all(...params);
+}
+
+export function getSalesSummary(filters = {}) {
+  const db = getDb();
+  let sqlBase = 'FROM sales_transactions WHERE 1=1';
+  const params = [];
+
+  if (filters.storeId && filters.storeId !== 'all') {
+    sqlBase += ' AND store_id = ?';
+    params.push(filters.storeId);
+  }
+  if (filters.startDate) {
+    sqlBase += ' AND date >= ?';
+    params.push(filters.startDate);
+  }
+  if (filters.endDate) {
+    sqlBase += ' AND date <= ?';
+    params.push(filters.endDate + 'T23:59:59.999Z');
+  }
+
+  const totals = db.prepare(`
+    SELECT
+      COUNT(DISTINCT bill_no) as totalBills,
+      COUNT(*) as totalLineItems,
+      COALESCE(SUM(qty), 0) as totalUnitsSold,
+      COALESCE(SUM(subtotal), 0) as totalGrossSales,
+      COALESCE(SUM(discount), 0) as totalDiscounts,
+      COALESCE(SUM(tax), 0) as totalTax,
+      COALESCE(SUM(total), 0) as totalNetSales
+    ${sqlBase}
+  `).get(...params);
+
+  const byStore = db.prepare(`
+    SELECT store_id, store_name, COUNT(DISTINCT bill_no) as bills, SUM(total) as revenue, SUM(qty) as units
+    ${sqlBase}
+    GROUP BY store_id, store_name
+    ORDER BY revenue DESC
+  `).all(...params);
+
+  const byPayment = db.prepare(`
+    SELECT payment_method, COUNT(DISTINCT bill_no) as count, SUM(total) as totalAmount
+    ${sqlBase}
+    GROUP BY payment_method
+    ORDER BY totalAmount DESC
+  `).all(...params);
+
+  const topItems = db.prepare(`
+    SELECT item_name, variant, category, SUM(qty) as totalQty, SUM(total) as totalRevenue
+    ${sqlBase}
+    GROUP BY item_name, variant
+    ORDER BY totalQty DESC
+    LIMIT 8
+  `).all(...params);
+
+  return {
+    ...totals,
+    byStore,
+    byPayment,
+    topItems,
+  };
+}
+
+export function insertSalesTransaction(tx) {
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT INTO sales_transactions (
+      id, bill_no, date, store_id, store_name, item_name, variant, category, barcode,
+      qty, unit_price, discount, tax, subtotal, total, payment_method, cashier
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(
+    tx.id || `stx-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    tx.bill_no,
+    tx.date || new Date().toISOString(),
+    tx.store_id,
+    tx.store_name,
+    tx.item_name,
+    tx.variant || '',
+    tx.category || 'Beverage',
+    tx.barcode || '',
+    tx.qty || 1,
+    tx.unit_price || 0,
+    tx.discount || 0,
+    tx.tax || 0,
+    tx.subtotal || ((tx.qty || 1) * (tx.unit_price || 0)),
+    tx.total || (((tx.qty || 1) * (tx.unit_price || 0)) - (tx.discount || 0) + (tx.tax || 0)),
+    tx.payment_method || 'QRIS BCA',
+    tx.cashier || 'Kasir'
+  );
+}
+
+export function saveBulkSalesTransactions(txList) {
+  const db = getDb();
+  const insertMany = db.transaction((items) => {
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO sales_transactions (
+        id, bill_no, date, store_id, store_name, item_name, variant, category, barcode,
+        qty, unit_price, discount, tax, subtotal, total, payment_method, cashier
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const tx of items) {
+      stmt.run(
+        tx.id || `stx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        tx.bill_no,
+        tx.date || new Date().toISOString(),
+        tx.store_id,
+        tx.store_name,
+        tx.item_name,
+        tx.variant || '',
+        tx.category || 'Beverage',
+        tx.barcode || '',
+        tx.qty || 1,
+        tx.unit_price || 0,
+        tx.discount || 0,
+        tx.tax || 0,
+        tx.subtotal || ((tx.qty || 1) * (tx.unit_price || 0)),
+        tx.total || (((tx.qty || 1) * (tx.unit_price || 0)) - (tx.discount || 0) + (tx.tax || 0)),
+        tx.payment_method || 'QRIS BCA',
+        tx.cashier || 'Kasir'
+      );
+    }
+  });
+  insertMany(txList);
+}
+
+// Seed initial realistic sales transactions if table is empty
+export function seedInitialSalesIfEmpty() {
+  const db = getDb();
+  const countRow = db.prepare('SELECT COUNT(*) as count FROM sales_transactions;').get();
+  if (countRow.count > 0) return;
+
+  const stores = [
+    { id: 'birmas-kuningan', name: 'Birmas Kuningan', cashier: 'Kasir Kuningan #1' },
+    { id: 'birmas-kwitang', name: 'Birmas Kwitang', cashier: 'Kasir Kwitang #1' },
+    { id: 'birmas-sudirman', name: 'Birmas Sudirman', cashier: 'Kasir Sudirman #2' },
+    { id: 'birmas-lebak-bulus', name: 'Birmas Lebak Bulus', cashier: 'Kasir L.Bulus #1' },
+  ];
+
+  const catalog = [
+    { name: 'Albens Apple Cider Lychee', variant: 'Can 330ml', cat: 'Cider', price: 42000, barcode: '8997022130018' },
+    { name: 'Albens Apple Cider Mango', variant: 'Can 330ml', cat: 'Cider', price: 42000, barcode: '8997022130025' },
+    { name: 'Albens Apple Cider Original', variant: 'Can 330ml', cat: 'Cider', price: 40000, barcode: '8997022130032' },
+    { name: 'Heineken Lager Beer', variant: 'Can 330ml', cat: 'Lager', price: 38000, barcode: '8992759110014' },
+    { name: 'Guinness Smooth Stout', variant: 'Can 330ml', cat: 'Stout', price: 44000, barcode: '8992759120020' },
+    { name: 'Bintang Pilsener Can', variant: 'Can 330ml', cat: 'Pilsener', price: 35000, barcode: '8992759130012' },
+    { name: 'Corona Extra Bottle', variant: 'Bottle 355ml', cat: 'Import Beer', price: 58000, barcode: '7501064191301' },
+    { name: 'San Miguel Light', variant: 'Can 330ml', cat: 'Lager', price: 39000, barcode: '4801034100123' },
+    { name: 'Smirnoff Ice Apple', variant: 'Bottle 275ml', cat: 'RTD', price: 40000, barcode: '8992759140028' },
+    { name: 'Hoegaarden White', variant: 'Bottle 330ml', cat: 'Craft Beer', price: 68000, barcode: '5410228141234' },
+  ];
+
+  const payMethods = ['QRIS BCA', 'Debit Mandiri', 'BCA Card', 'Cash', 'GoPay', 'ShopeePay'];
+  const transactions = [];
+
+  const now = new Date();
+  let billCounter = 1001;
+
+  // Generate 120 sales transactions distributed across all 4 stores over past 7 days
+  for (let dayOffset = 6; dayOffset >= 0; dayOffset--) {
+    const txDate = new Date(now.getTime() - dayOffset * 24 * 60 * 60 * 1000);
+
+    for (const store of stores) {
+      const billsCount = 3 + Math.floor(Math.random() * 4); // 3 to 6 bills per store per day
+
+      for (let b = 0; b < billsCount; b++) {
+        billCounter++;
+        const hour = 11 + Math.floor(Math.random() * 11);
+        const minute = Math.floor(Math.random() * 60);
+        txDate.setHours(hour, minute, Math.floor(Math.random() * 60));
+        const dateIso = txDate.toISOString();
+
+        const billNo = `ESB-${store.id.replace('birmas-', '').toUpperCase().slice(0, 3)}-${txDate.toISOString().slice(0, 10).replace(/-/g, '')}-${String(billCounter).slice(-4)}`;
+        const payment = payMethods[Math.floor(Math.random() * payMethods.length)];
+
+        // 1 to 3 items per bill
+        const itemsCount = 1 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < itemsCount; i++) {
+          const item = catalog[Math.floor(Math.random() * catalog.length)];
+          const qty = 1 + Math.floor(Math.random() * 3);
+          const subtotal = qty * item.price;
+          const discount = Math.random() < 0.15 ? Math.floor(subtotal * 0.1) : 0;
+          const tax = Math.round((subtotal - discount) * 0.1);
+          const total = subtotal - discount + tax;
+
+          transactions.push({
+            id: `tx-${billNo}-${i}`,
+            bill_no: billNo,
+            date: dateIso,
+            store_id: store.id,
+            store_name: store.name,
+            item_name: item.name,
+            variant: item.variant,
+            category: item.cat,
+            barcode: item.barcode,
+            qty,
+            unit_price: item.price,
+            discount,
+            tax,
+            subtotal,
+            total,
+            payment_method: payment,
+            cashier: store.cashier,
+          });
+        }
+      }
+    }
+  }
+
+  saveBulkSalesTransactions(transactions);
+  console.log(`[Sales Seed] Inserted ${transactions.length} ESB sales recapitulation detail records across all stores.`);
 }

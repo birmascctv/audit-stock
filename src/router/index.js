@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import AuditView from '../views/AuditView.vue';
 import AuditHistoryView from '../views/AuditHistoryView.vue';
+import SalesReportView from '../views/SalesReportView.vue';
 import LoginView from '../views/LoginView.vue';
 
 const routes = [
@@ -12,15 +13,19 @@ const routes = [
     path: '/audit',
     name: 'Audit',
     component: AuditView,
-  },
-  {
-    path: '/wordpress',
-    redirect: '/login',
+    meta: { requiresAuth: true, allowedRoles: ['auditor', 'superadmin'] },
   },
   {
     path: '/history',
     name: 'History',
     component: AuditHistoryView,
+    meta: { requiresAuth: true, allowedRoles: ['auditor', 'superadmin'] },
+  },
+  {
+    path: '/sales',
+    name: 'Sales',
+    component: SalesReportView,
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'superadmin'] },
   },
   {
     path: '/login',
@@ -42,21 +47,44 @@ const router = createRouter({
 });
 
 router.beforeEach((to, from, next) => {
-  let isAuth = false;
+  let user = null;
   try {
     const session = sessionStorage.getItem('birmas_audit_session_v4');
-    isAuth = !!session;
+    if (session) {
+      user = JSON.parse(session);
+    }
   } catch {
-    isAuth = false;
+    user = null;
   }
 
+  const isAuth = !!user;
+  const userRole = user?.role || '';
+
   if (to.path !== '/login' && !isAuth) {
-    next('/login');
-  } else if (to.path === '/login' && isAuth) {
-    next('/audit');
-  } else {
-    next();
+    return next('/login');
   }
+
+  if (to.path === '/login' && isAuth) {
+    if (userRole === 'admin') {
+      return next('/sales');
+    }
+    return next('/audit');
+  }
+
+  // Role-Based Access Control check
+  if (to.meta?.allowedRoles && !to.meta.allowedRoles.includes(userRole)) {
+    // If auditor tries to access sales -> redirect to /audit
+    if (userRole === 'auditor') {
+      return next('/audit');
+    }
+    // If admin tries to access stock audit -> redirect to /sales
+    if (userRole === 'admin') {
+      return next('/sales');
+    }
+    return next('/login');
+  }
+
+  next();
 });
 
 export default router;

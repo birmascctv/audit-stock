@@ -13,7 +13,9 @@ import {
   History,
   Building2,
   LogOut,
-  Zap
+  Zap,
+  TrendingUp,
+  User as UserIcon,
 } from 'lucide-vue-next';
 
 defineProps({
@@ -27,7 +29,7 @@ const emit = defineEmits(['toggleSound', 'openGuide']);
 
 const route = useRoute();
 const router = useRouter();
-const { logout } = useAuth();
+const { currentUser, role, isAuditor, isAdmin, isSuperAdmin, canAccessStockAudit, canAccessSalesReport, logout } = useAuth();
 const { stores, selectedStoreId, selectStore, lastCheckedAt } = useAuditStore();
 
 const currentTime = ref('');
@@ -63,7 +65,7 @@ onUnmounted(() => {
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <!-- Logo & Navigation Tabs -->
         <div class="flex flex-wrap items-center gap-3 sm:gap-6">
-          <router-link to="/audit" class="flex items-center gap-2.5 group">
+          <router-link :to="canAccessStockAudit ? '/audit' : '/sales'" class="flex items-center gap-2.5 group">
             <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-teal-600 to-cyan-600 flex items-center justify-center text-white shadow-md shadow-teal-500/20 group-hover:scale-105 transition-transform">
               <ClipboardCheck class="w-5 h-5 text-white" />
             </div>
@@ -76,13 +78,15 @@ onUnmounted(() => {
                   Store Station
                 </span>
               </div>
-              <p class="text-[11px] text-slate-500">Overall Store Physical Stock Audit</p>
+              <p class="text-[11px] text-slate-500">Overall Store Physical Stock & Sales Audit</p>
             </div>
           </router-link>
 
-          <!-- Navigation Links -->
+          <!-- Navigation Links with Role Protection -->
           <nav class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <!-- Physical Audit (Auditor & Superadmin only) -->
             <router-link
+              v-if="canAccessStockAudit"
               to="/audit"
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
               :class="
@@ -95,7 +99,9 @@ onUnmounted(() => {
               <span>Physical Audit</span>
             </router-link>
 
+            <!-- Audit Records (Auditor & Superadmin only) -->
             <router-link
+              v-if="canAccessStockAudit"
               to="/history"
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
               :class="
@@ -107,16 +113,46 @@ onUnmounted(() => {
               <History class="w-3.5 h-3.5" />
               <span>Audit Records</span>
             </router-link>
+
+            <!-- Sales Report (Admin & Superadmin only) -->
+            <router-link
+              v-if="canAccessSalesReport"
+              to="/sales"
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+              :class="
+                route.path === '/sales'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+              "
+            >
+              <TrendingUp class="w-3.5 h-3.5" />
+              <span>Sales Report</span>
+            </router-link>
           </nav>
         </div>
 
-        <!-- Right Side: Auto-Checker, Tools & Logout -->
+        <!-- Right Side: User Role Profile, Tools & Logout -->
         <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <!-- Live Auto-Checker Status -->
-          <div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-medium" title="Background checker pulls fresh ESB stock and physical scans every 10s-30s">
-            <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
-            <span class="font-bold">Auto-Sync</span>
-            <span class="text-teal-600 text-[10px]">({{ lastCheckedAt }})</span>
+          <!-- Current User Profile & Role Badge -->
+          <div v-if="currentUser" class="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1 rounded-xl shadow-xs">
+            <div class="w-7 h-7 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center font-bold text-xs">
+              {{ currentUser.name ? currentUser.name.charAt(0) : 'U' }}
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-bold text-slate-900 leading-tight">{{ currentUser.name }}</span>
+                <span
+                  class="text-[9px] font-bold px-1.5 py-0.2 rounded uppercase tracking-wider"
+                  :class="{
+                    'bg-purple-100 text-purple-800 border border-purple-200': isSuperAdmin,
+                    'bg-blue-100 text-blue-800 border border-blue-200': isAdmin,
+                    'bg-teal-100 text-teal-800 border border-teal-200': isAuditor,
+                  }"
+                >
+                  {{ isSuperAdmin ? 'Superadmin' : (isAdmin ? 'Sales Admin' : 'Auditor') }}
+                </span>
+              </div>
+            </div>
           </div>
 
           <!-- Sound Mute Toggle -->

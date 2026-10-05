@@ -4,19 +4,33 @@ const AUTH_STORAGE_KEY = 'birmas_audit_session_v4';
 
 export const DEFAULT_ACCOUNTS = [
   {
+    id: 'user-superadmin',
+    username: 'superadmin',
+    email: 'superadmin@birmas.id',
+    name: 'Super Admin',
+    role: 'superadmin',
+    roleLabel: 'Super Admin',
+    accessScope: 'Stock Audit & Sales Report',
+    hint: 'Password: superadmin666',
+  },
+  {
     id: 'user-admin',
     username: 'admin',
     email: 'admin@birmas.id',
-    name: 'Admin',
-    role: 'Administrator',
+    name: 'Sales Admin',
+    role: 'admin',
+    roleLabel: 'Sales Admin',
+    accessScope: 'Audit Sales Report Only',
     hint: 'Password: admin666',
   },
   {
     id: 'user-chrisna',
     username: 'chrisna',
     email: 'chrisna@birmas.id',
-    name: 'Chrisna',
-    role: 'Auditor',
+    name: 'Chrisna (Auditor)',
+    role: 'auditor',
+    roleLabel: 'Stock Auditor',
+    accessScope: 'Stock Physical Audit Only',
     hint: 'Password: auditor666',
   },
 ];
@@ -80,8 +94,10 @@ export function useAuth() {
       );
       if (
         matched &&
-        ((cleanUser === 'admin' && passwordInput === 'admin666') ||
-         (cleanUser === 'chrisna' && passwordInput === 'auditor666'))
+        ((cleanUser === 'superadmin' && passwordInput === 'superadmin666') ||
+         (cleanUser === 'admin' && passwordInput === 'admin666') ||
+         (cleanUser === 'chrisna' && passwordInput === 'auditor666') ||
+         (cleanUser === 'auditor' && passwordInput === 'auditor666'))
       ) {
         currentUser.value = matched;
         if (typeof window !== 'undefined') {
@@ -100,8 +116,23 @@ export function useAuth() {
     }
   }
 
+  const role = computed(() => currentUser.value?.role || '');
+  const isAuditor = computed(() => role.value === 'auditor');
+  const isAdmin = computed(() => role.value === 'admin');
+  const isSuperAdmin = computed(() => role.value === 'superadmin');
+
+  // RBAC Access Control
+  const canAccessStockAudit = computed(() => role.value === 'auditor' || role.value === 'superadmin');
+  const canAccessSalesReport = computed(() => role.value === 'admin' || role.value === 'superadmin');
+
   return {
     currentUser,
+    role,
+    isAuditor,
+    isAdmin,
+    isSuperAdmin,
+    canAccessStockAudit,
+    canAccessSalesReport,
     isAuthenticated,
     loginWithBackend,
     logout,

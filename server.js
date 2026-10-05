@@ -930,7 +930,81 @@ async function startServer() {
     res.json({ success: true, message: `Welcome back, ${user.name}`, user: safeUser });
   });
 
-  // 14. Database health & system status
+  // 14. Sales Report Endpoints (ESB report-sales-recapitulation-detail)
+  app.get('/api/sales/report', (req, res) => {
+    try {
+      const filters = {
+        storeId: req.query.storeId,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        search: req.query.search,
+        category: req.query.category,
+        paymentMethod: req.query.paymentMethod,
+        limit: req.query.limit || 200,
+        offset: req.query.offset || 0,
+      };
+      const transactions = db.getSalesTransactions(filters);
+      res.json({ success: true, transactions, total: transactions.length });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/sales/summary', (req, res) => {
+    try {
+      const filters = {
+        storeId: req.query.storeId,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      };
+      const summary = db.getSalesSummary(filters);
+      res.json({ success: true, summary });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/sales/sync-birmas', async (req, res) => {
+    try {
+      const birmasUrl = db.getConfig('wp_url', 'https://admin.birmas.id');
+      const salesEndpoint = `${birmasUrl.replace(/\/+$/, '')}/wp-json/api/v1/sales_report`;
+      console.log(`[Sales Sync] Querying Birmas server sales bridge at: ${salesEndpoint}`);
+
+      try {
+        const response = await fetch(salesEndpoint, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const items = Array.isArray(data) ? data : (data.items || data.transactions || data.data || []);
+          if (items.length > 0) {
+            db.saveBulkSalesTransactions(items);
+            return res.json({
+              success: true,
+              message: `Successfully synchronized ${items.length} sales records from Birmas Central Server!`,
+              count: items.length,
+            });
+          }
+        }
+      } catch (fetchErr) {
+        console.warn('[Sales Sync] Birmas server endpoint not yet active or timed out:', fetchErr.message);
+      }
+
+      // Return status with bridge instructions
+      res.json({
+        success: true,
+        message: 'Loaded local ESB sales recapitulation data. To pull live from Birmas server, add the WordPress bridge snippet on admin.birmas.id.',
+        bridgeReady: false,
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 15. Database health & system status
   app.get('/api/database/status', (req, res) => {
     const dbPath = path.join(__dirname, 'data', 'birmas_audit.sqlite');
     const stats = fs.existsSync(dbPath) ? fs.statSync(dbPath) : null;

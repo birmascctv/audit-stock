@@ -95,15 +95,11 @@ export function useAuditStore() {
     initializeFromBackend();
   }
 
-  // Filter stores to ONLY show: Birmas Sudirman, Kuningan, Kwitang, Kelapa Gading, and Lebak Bulus
-  const ALLOWED_STORE_KEYWORDS = [
-    'sudirman',
+  // Filter stock audit stores to ONLY show: Birmas Kuningan, Kwitang, and Sudirman (per user instruction)
+  const STOCK_AUDIT_STORE_KEYWORDS = [
     'kuningan',
     'kwitang',
-    'kelapa gading',
-    'kgading',
-    'lebak bulus',
-    'lbulus',
+    'sudirman',
   ];
 
   const visibleStores = computed(() => {
@@ -112,12 +108,12 @@ export function useAuditStore() {
         const nameLower = String(s.name || '').toLowerCase();
         const idLower = String(s.id || '').toLowerCase();
         const codeLower = String(s.esbBranchCode || '').toLowerCase();
-        return ALLOWED_STORE_KEYWORDS.some(
+        return STOCK_AUDIT_STORE_KEYWORDS.some(
           (kw) => nameLower.includes(kw) || idLower.includes(kw) || codeLower.includes(kw)
         );
       })
       .sort((a, b) => {
-        const order = ['sudirman', 'kuningan', 'kwitang', 'kelapa gading', 'lebak bulus'];
+        const order = ['kuningan', 'kwitang', 'sudirman'];
         const getRank = (st) => {
           const n = String(st.name || '').toLowerCase();
           const idx = order.findIndex((k) => n.includes(k));
@@ -128,11 +124,12 @@ export function useAuditStore() {
   });
 
   const currentStore = computed(() => {
-    return (
-      visibleStores.value.find((s) => s.id === selectedStoreId.value) ||
-      visibleStores.value[0] ||
-      stores.value[0]
-    );
+    const found = visibleStores.value.find((s) => s.id === selectedStoreId.value);
+    if (!found && visibleStores.value.length > 0) {
+      selectedStoreId.value = visibleStores.value[0].id;
+      return visibleStores.value[0];
+    }
+    return found || visibleStores.value[0] || stores.value[0];
   });
 
   // Compare Scanned Physical Count with WordPress/ESB Stock for this Store

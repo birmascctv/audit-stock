@@ -209,6 +209,140 @@ export async function runDirectESBSync() {
 }
 
 // ==========================================
+// BIRMAS CENTRAL SERVER INVENTORY SYNC ENGINE
+// Pulls directly from Birmas central server (which has permanent ESB API access)
+// No session cookies or cURL required!
+// ==========================================
+let isBirmasServerSyncing = false;
+
+export async function runBirmasServerSync(options = {}) {
+  if (isBirmasServerSyncing) {
+    return { success: false, message: 'Birmas Central Server sync is already running in background' };
+  }
+  isBirmasServerSyncing = true;
+  try {
+    const baseUrl = options.baseUrl || db.getConfig('wp_url') || 'https://admin.birmas.id';
+    console.log(`[Birmas Server Sync] Connecting to Birmas central server (${baseUrl})...`);
+
+    const existingProducts = db.getAllProducts();
+    const barcodeMap = new Map();
+    for (const p of existingProducts) {
+      if (p.barcode) {
+        barcodeMap.set(p.id, p.barcode);
+        if (p.productTitle) barcodeMap.set(p.productTitle.toLowerCase().trim(), p.barcode);
+      }
+    }
+
+    const storeKeywordMap = [
+      { kw: 'sudirman', storeId: 'birmas-sudirman' },
+      { kw: 'kuningan', storeId: 'birmas-kuningan' },
+      { kw: 'kwitang', storeId: 'birmas-kwitang' },
+      { kw: 'lebak bulus', storeId: 'birmas-lebak-bulus' },
+      { kw: 'lbulus', storeId: 'birmas-lebak-bulus' },
+    ];
+
+    let totalSyncedProducts = 0;
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore && page <= 15) {
+      const url = `${baseUrl.replace(/\/+$/, '')}/wp-json/api/v1/product_stocks?per_page=100&page=${page}`;
+      const res = await fetch(url, {
+        headers: { 'user-agent': 'BirmasStockAudit/2.0' },
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!res.ok) {
+        console.warn(`[Birmas Server Sync] Page ${page} responded with status ${res.status}`);
+        break;
+      }
+
+      const items = await res.json();
+      if (!Array.isArray(items) || items.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      for (const item of items) {
+        const locName = (item.location?.[0]?.post_title || '').toLowerCase();
+        const matchedStore = storeKeywordMap.find((m) => locName.includes(m.kw));
+        if (!matchedStore) continue;
+
+        const pv = item.product_variant?.[0];
+        const p = pv?.product?.[0];
+        if (!p && !item.esb_menu_id) continue;
+
+        const prodName = (p?.post_title || '').trim();
+        if (!prodName) continue;
+
+        // Skip non-retail merchandise
+        const categoryName = (p?.product_category?.post_title || 'BEVERAGE').toUpperCase();
+        if (
+          prodName.toLowerCase().includes('cleaner') ||
+          prodName.toLowerCase().includes('router') ||
+          prodName.toLowerCase().includes('es batu') ||
+          prodName.toLowerCase().includes('gelas cup')
+        ) {
+          continue;
+        }
+
+        const esbId = item.esb_menu_id || item.id;
+        const prodId = `erp-${esbId}`;
+        const existingBarcode = barcodeMap.get(prodId) || barcodeMap.get(prodName.toLowerCase().trim()) || null;
+
+        // Brand from product name or subcategory
+        const brand = prodName.split(' ')[0].toUpperCase();
+        let varian = prodName;
+        if (varian.toLowerCase().startsWith(brand.toLowerCase())) {
+          varian = varian.slice(brand.length).trim();
+        }
+
+        const price = parseFloat(pv?.regular_price) || 0;
+        const unit = pv?.variant || 'BOTOL';
+        const stockQty = parseFloat(item.stock) || 0;
+
+        db.saveProduct({
+          id: prodId,
+          barcode: existingBarcode,
+          sku: `SKU-${esbId}`,
+          brand: brand,
+          varian: varian || prodName,
+          productTitle: prodName,
+          category: categoryName,
+          subCategory: brand,
+          defaultUnit: unit,
+          packageType: unit.toLowerCase().includes('can') || unit.toLowerCase().includes('kaleng') ? 'Kaleng' : 'Botol',
+          volume: parseInt(pv?.volume) || (prodName.includes('620') ? 620 : 330),
+          unitVolume: pv?.unit_volume || 'ml',
+          price: price,
+          wpStatus: 'publish',
+          lastUpdated: new Date().toISOString(),
+        });
+
+        db.setProductStock(matchedStore.storeId, prodId, stockQty);
+        totalSyncedProducts++;
+      }
+
+      page++;
+    }
+
+    db.setConfig('last_birmas_server_synced_at', new Date().toISOString());
+    console.log(`[Birmas Server Sync] Completed! Synced ${totalSyncedProducts} store stocks from Birmas central server.`);
+    return {
+      success: true,
+      message: `Successfully synchronized ${totalSyncedProducts} items from Birmas Central Server (${baseUrl})`,
+      totalSyncedProducts,
+      source: 'birmas_server',
+    };
+  } catch (err) {
+    console.error('[Birmas Server Sync Error]:', err.message);
+    return { success: false, error: err.message };
+  } finally {
+    isBirmasServerSyncing = false;
+  }
+}
+
+// ==========================================
 // MY ESB ERP INVENTORY SYNC ENGINE
 // Pulls directly from My ESB ERP (Stock Period List)
 // ==========================================
@@ -729,6 +863,34 @@ async function startServer() {
     });
   });
 
+  // 13c. Birmas Central Server Sync (Permanent & No cURL needed)
+  app.post('/api/birmas/sync', async (req, res) => {
+    try {
+      const result = await runBirmasServerSync(req.body || {});
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/birmas/config', (req, res) => {
+    res.json({
+      birmasServerUrl: db.getConfig('wp_url') || 'https://admin.birmas.id',
+      lastSyncedAt: db.getConfig('last_birmas_server_synced_at') || null,
+    });
+  });
+
+  app.post('/api/birmas/config', (req, res) => {
+    if (req.body.birmasServerUrl) {
+      db.setConfig('wp_url', req.body.birmasServerUrl.trim());
+    }
+    res.json({
+      success: true,
+      birmasServerUrl: db.getConfig('wp_url'),
+      lastSyncedAt: db.getConfig('last_birmas_server_synced_at'),
+    });
+  });
+
   // 14. Instant Webhook from ESB / WordPress
   app.post('/api/esb/webhook', (req, res) => {
     const { location, variant_title, stock } = req.body;
@@ -807,17 +969,38 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Birmas Server] SQLite Tables Ready at http://localhost:${PORT}`);
-    // Run initial My ESB ERP Stock sync for all 4 stores after 3 seconds, then automatically every 15 minutes
+
+    // Combined automatic sync routine:
+    // 1. Primary: Pull from Birmas Central Server (https://admin.birmas.id) - Permanent & No cURL needed!
+    // 2. Secondary fallback: My ESB ERP session if configured
+    async function executePeriodicSync() {
+      console.log('[Auto-Sync] Running scheduled 15-minute background inventory sync...');
+      try {
+        const birmasRes = await runBirmasServerSync();
+        if (birmasRes.success && birmasRes.totalSyncedProducts > 0) {
+          console.log(`[Auto-Sync] Successfully synchronized ${birmasRes.totalSyncedProducts} items from Birmas Central Server!`);
+          return;
+        }
+      } catch (e) {
+        console.warn('[Auto-Sync] Birmas Central Server sync notice:', e.message);
+      }
+
+      try {
+        console.log('[Auto-Sync] Executing ESB ERP fallback sync...');
+        await runDirectESBERPSync({ storeId: 'all' });
+      } catch (e) {
+        console.warn('[Auto-Sync] ESB ERP fallback notice:', e.message);
+      }
+    }
+
     setTimeout(() => {
-      console.log('[Backend Startup] Automatically syncing real inventory stock for all 4 Birmas stores from My ESB ERP...');
-      runDirectESBERPSync({ storeId: 'all' }).catch((e) => console.warn('[Initial ERP Sync Error]:', e.message));
+      executePeriodicSync();
     }, 3000);
 
-    const ERP_AUTO_SYNC_INTERVAL_MS = 15 * 60 * 1000; // Automatically every 15 minutes
+    const SYNC_INTERVAL_MS = 15 * 60 * 1000; // Automatically every 15 minutes
     setInterval(() => {
-      console.log('[Auto-Sync] Running scheduled 15-minute background inventory sync for all 4 Birmas stores from My ESB ERP...');
-      runDirectESBERPSync({ storeId: 'all' }).catch((e) => console.warn('[Periodic ERP Sync Error]:', e.message));
-    }, ERP_AUTO_SYNC_INTERVAL_MS);
+      executePeriodicSync();
+    }, SYNC_INTERVAL_MS);
   });
 }
 

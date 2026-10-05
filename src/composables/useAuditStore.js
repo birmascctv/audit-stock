@@ -75,7 +75,6 @@ async function initializeFromBackend() {
 
     await loadStoreScans(selectedStoreId.value);
     isInitialized.value = true;
-    startBackgroundChecker();
   } catch (err) {
     console.warn('Backend init fallback:', err);
   }
@@ -89,31 +88,6 @@ async function loadStoreScans(storeId) {
   } catch (err) {
     console.warn('Failed to load store scans:', err);
   }
-}
-
-// Background poller: automatically checks backend for any ESB updates or scans every 10 seconds
-let backgroundTimer = null;
-function startBackgroundChecker() {
-  if (backgroundTimer) return;
-  backgroundTimer = setInterval(async () => {
-    if (!isAutoCheckerActive.value || isSyncing.value) return;
-    try {
-      const [latestProducts, latestState] = await Promise.all([
-        fetchProducts().catch(() => null),
-        fetchAuditState(selectedStoreId.value).catch(() => null),
-      ]);
-      if (latestProducts && latestProducts.length > 0) {
-        wpProducts.value = latestProducts;
-      }
-      if (latestState) {
-        scannedCounts.value = latestState.counts || latestState.scannedCounts || {};
-        scanLogs.value = latestState.scanLogs || [];
-      }
-      lastCheckedAt.value = new Date().toLocaleTimeString();
-    } catch (e) {
-      // silently ignore temporary connection lapses
-    }
-  }, 10000);
 }
 
 export function useAuditStore() {
@@ -411,6 +385,38 @@ export function useAuditStore() {
     }
   }
 
+  async function syncFromBirmasServer() {
+    isSyncing.value = true;
+    try {
+      const res = await fetch('/api/birmas/sync', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        const [freshStores, freshProducts] = await Promise.all([fetchStores(), fetchProducts()]);
+        stores.value = freshStores;
+        wpProducts.value = freshProducts;
+        wpConfig.value.lastSyncedAt = new Date().toISOString();
+        try {
+          const auditState = await fetchAuditState(selectedStoreId.value);
+          if (auditState && auditState.counts) {
+            scannedCounts.value = auditState.counts;
+          }
+        } catch {}
+        lastSyncStatus.value = {
+          success: true,
+          message: `Synced with Birmas Server! ${data.totalSyncedProducts || 0} items updated across all stores.`,
+        };
+      } else {
+        lastSyncStatus.value = { success: false, message: data.error || 'Birmas server sync failed' };
+      }
+      return data;
+    } catch (err) {
+      lastSyncStatus.value = { success: false, message: err.message };
+      return { success: false, error: err.message };
+    } finally {
+      isSyncing.value = false;
+    }
+  }
+
   async function finalizeAudit(auditorName, notes = '', pushToWP = false) {
     const completedRecord = {
       id: `audit-${Date.now()}`,
@@ -500,6 +506,7 @@ export function useAuditStore() {
     syncFromWordPress,
     syncFromESBDirect,
     syncFromESBERP,
+    syncFromBirmasServer,
     finalizeAudit,
     clearHistory,
     createStore,

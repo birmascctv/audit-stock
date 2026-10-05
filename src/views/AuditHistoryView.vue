@@ -40,7 +40,6 @@ function exportHistoryCSV() {
     'Matched SKUs': a.matchedCount,
     'Missing SKUs': a.missingCount,
     'Surplus SKUs': a.surplusCount,
-    'Pushed to ESB': a.pushedToWordPress ? 'YES' : 'NO',
     Notes: a.notes || '',
   }));
   exportToCSV(`Store_Audits_History_${new Date().toISOString().split('T')[0]}.csv`, data);
@@ -100,15 +99,16 @@ function exportHistoryCSV() {
               <th class="py-3.5 px-4 text-center">Expected (ESB)</th>
               <th class="py-3.5 px-4 text-center">Scanned (Physical)</th>
               <th class="py-3.5 px-4 text-center">Discrepancy</th>
-              <th class="py-3.5 px-4 text-center">ESB Updated</th>
-              <th class="py-3.5 px-4 text-right">Actions</th>
+              <th class="py-3.5 px-4">Notes</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
             <tr
               v-for="audit in auditHistory"
               :key="audit.id"
-              class="hover:bg-slate-50 transition-colors"
+              class="hover:bg-slate-50 transition-colors cursor-pointer"
+              @click="selectedAudit = audit"
+              title="Click to view detailed item breakdown"
             >
               <!-- Date & Time -->
               <td class="py-3.5 px-4 font-mono text-slate-700 whitespace-nowrap">
@@ -157,32 +157,16 @@ function exportHistoryCSV() {
                 </span>
               </td>
 
-              <!-- Pushed to ESB -->
-              <td class="py-3.5 px-4 text-center">
-                <span
-                  class="px-2 py-0.5 rounded text-[10px] font-bold"
-                  :class="audit.pushedToWordPress ? 'bg-teal-50 text-teal-700 border border-teal-200' : 'bg-slate-100 text-slate-500'"
-                >
-                  {{ audit.pushedToWordPress ? 'Synced' : 'No' }}
-                </span>
-              </td>
-
-              <!-- View Details -->
-              <td class="py-3.5 px-4 text-right">
-                <button
-                  @click="selectedAudit = audit"
-                  type="button"
-                  class="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-semibold flex items-center gap-1 ml-auto transition-colors"
-                >
-                  <Eye class="w-3.5 h-3.5" />
-                  <span>Breakdown</span>
-                </button>
+              <!-- Notes -->
+              <td class="py-3.5 px-4 text-slate-700 max-w-xs">
+                <span v-if="audit.notes" class="font-medium text-slate-800">{{ audit.notes }}</span>
+                <span v-else class="text-slate-400 italic">No notes</span>
               </td>
             </tr>
 
             <!-- Empty -->
             <tr v-if="auditHistory.length === 0">
-              <td colspan="8" class="py-12 text-center text-slate-400">
+              <td colspan="7" class="py-12 text-center text-slate-400">
                 <History class="w-8 h-8 text-slate-300 mx-auto mb-2" />
                 <p class="font-medium text-slate-600">No completed audits in history yet</p>
                 <p class="text-xs text-slate-400 mt-0.5">

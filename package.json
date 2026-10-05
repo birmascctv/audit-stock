@@ -5,24 +5,39 @@
   "type": "module",
   "scripts": {
     "dev": "node server.js",
-    "start": "node server.js",
     "build": "vite build",
+    "start": "node server.js",
     "preview": "vite preview",
-    "sync:wp": "node server.js --sync",
-    "sync:esb": "node server.js --sync-esb",
-    "clean": "rm -rf dist",
-    "lint": "node --check server.js && node --check vite.config.js"
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
     "@vitejs/plugin-vue": "^6.0.9",
+    "canvas-confetti": "^1.9.4",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "html5-qrcode": "^2.3.8",
+    "lucide-react": "^0.546.0",
     "lucide-vue-next": "^1.0.0",
-    "tailwindcss": "^4.3.3",
+    "motion": "^12.23.24",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
     "vite": "^8.3.0",
     "vue": "^3.5.43",
     "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "autoprefixer": "^10.4.21",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.21.0",
+    "typescript": "^7.0.2"
   }
 }

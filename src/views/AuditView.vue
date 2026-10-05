@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useAuditStore } from '../composables/useAuditStore.js';
 import { useScanner } from '../composables/useScanner.js';
 import { useAuth } from '../composables/useAuth.js';
@@ -58,6 +58,7 @@ const {
   syncFromWordPress,
   syncFromESBDirect,
   syncFromESBERP,
+  syncFromBirmasServer,
   finalizeAudit,
   isSyncing,
   lastSyncStatus,
@@ -71,6 +72,8 @@ const brandFilter = ref('ALL');
 const isCompleteModalOpen = ref(false);
 const isAddBarcodeModalOpen = ref(false);
 const isSessionModalOpen = ref(false);
+const birmasSyncTab = ref('birmas'); // 'birmas' | 'curl'
+const isSyncingBirmas = ref(false);
 const rawCurlInput = ref('');
 const isSavingSession = ref(false);
 const sessionStatusMsg = ref('');
@@ -78,6 +81,45 @@ const pendingUnknownBarcode = ref('');
 const isFinalizing = ref(false);
 const auditNotes = ref('');
 const pushToWordPressOnFinalize = ref(true);
+const birmasServerUrlInput = ref('https://admin.birmas.id');
+
+async function loadBirmasConfig() {
+  try {
+    const res = await fetch('/api/birmas/config');
+    const data = await res.json();
+    if (data.birmasServerUrl) {
+      birmasServerUrlInput.value = data.birmasServerUrl;
+    }
+  } catch {}
+}
+
+async function handleBirmasServerSync() {
+  isSyncingBirmas.value = true;
+  sessionStatusMsg.value = '';
+  try {
+    if (birmasServerUrlInput.value.trim()) {
+      await fetch('/api/birmas/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ birmasServerUrl: birmasServerUrlInput.value.trim() }),
+      });
+    }
+    const res = await syncFromBirmasServer();
+    if (res.success) {
+      sessionStatusMsg.value = `Successfully pulled fresh stock from Birmas Central Server! (${res.totalSyncedProducts || 0} items updated)`;
+      setTimeout(() => {
+        isSessionModalOpen.value = false;
+        sessionStatusMsg.value = '';
+      }, 1800);
+    } else {
+      sessionStatusMsg.value = res.error || res.message || 'Failed to pull from Birmas server';
+    }
+  } catch (err) {
+    sessionStatusMsg.value = err.message;
+  } finally {
+    isSyncingBirmas.value = false;
+  }
+}
 
 async function saveSessionFromCurl() {
   if (!rawCurlInput.value.trim()) return;
@@ -224,23 +266,12 @@ function openAddBarcodeWithPrefill(barcode) {
   isAddBarcodeModalOpen.value = true;
 }
 
-function exportAuditCSV() {
-  const data = auditItems.value.map((item, idx) => ({
-    No: idx + 1,
-    Store: currentStore.value.name,
-    'Kode Barcode': item.barcode,
-    Brand: item.subCategory || item.brand,
-    'Product Name': item.productTitle || item.varian,
-    Qty: item.wpExpectedQty,
-    'Physical Scanned Count': item.scannedCount,
-    Discrepancy: item.discrepancy,
-    'Audit Status': item.status.toUpperCase(),
-  }));
-  exportToCSV(
-    `Audit_${currentStore.value.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`,
-    data
-  );
-}
+onMounted(() => {
+  window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  if (document.documentElement) document.documentElement.scrollTop = 0;
+  if (document.body) document.body.scrollTop = 0;
+  loadBirmasConfig();
+});
 </script>
 
 <template>
@@ -284,19 +315,27 @@ function exportAuditCSV() {
           <span>Add New Barcode</span>
         </button>
 
-        <!-- Live Auto-Sync Status Badge & Session Settings -->
-        <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-600 shadow-sm">
-          <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-          <span class="text-[11px] font-bold text-slate-700">Auto-synced (15m)</span>
-          <button
-            @click="isSessionModalOpen = true"
-            type="button"
-            class="p-1 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors ml-0.5"
-            title="Update My ESB ERP Session Credentials"
-          >
-            <Settings class="w-3.5 h-3.5" />
-          </button>
-        </div>
+        <!-- Refresh Stock Button (Birmas Central Server) -->
+        <button
+          @click="handleBirmasServerSync"
+          :disabled="isSyncing || isSyncingBirmas"
+          type="button"
+          class="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+          title="Refresh real-time catalog & stock from Birmas Central Server"
+        >
+          <RefreshCw class="w-3.5 h-3.5 text-teal-600" :class="{ 'animate-spin': isSyncing || isSyncingBirmas }" />
+          <span>{{ isSyncing || isSyncingBirmas ? 'Syncing...' : 'Refresh Stock' }}</span>
+        </button>
+
+        <!-- Sync Settings Button -->
+        <button
+          @click="isSessionModalOpen = true"
+          type="button"
+          class="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-800 border border-slate-300 transition-colors shadow-sm cursor-pointer"
+          title="Server Sync Settings"
+        >
+          <Settings class="w-4 h-4" />
+        </button>
 
         <!-- Finalize Audit Button -->
         <button
@@ -663,15 +702,6 @@ function exportAuditCSV() {
             >
               <Plus class="w-3.5 h-3.5" />
               <span>Add New Barcode</span>
-            </button>
-
-            <button
-              @click="exportAuditCSV"
-              type="button"
-              class="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-            >
-              <Download class="w-3.5 h-3.5 text-teal-600" />
-              <span>Export CSV</span>
             </button>
           </div>
         </div>
@@ -1043,62 +1073,130 @@ function exportAuditCSV() {
               <Database class="w-5 h-5" />
             </div>
             <div>
-              <h3 class="text-base font-extrabold text-slate-900">My ESB ERP Session</h3>
-              <p class="text-xs text-slate-500">Live Inventory Stock Period Connection</p>
+              <h3 class="text-base font-extrabold text-slate-900">Inventory Sync Engine</h3>
+              <p class="text-xs text-slate-500">Live Stock Connection & Data Refresh</p>
             </div>
           </div>
           <button
             @click="isSessionModalOpen = false"
-            class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100"
+            class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
           >
             ✕
           </button>
         </div>
 
-        <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2.5">
-          <CheckCircle2 class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-          <div>
-            <span class="font-bold block">Status: Connected to PT. Birmas Merubah Persepsi</span>
-            <span class="text-slate-600 text-[11px] block mt-0.5">User: BRMPhillip (KUNINGAN Branch #3, 283 items)</span>
-          </div>
+        <!-- Navigation Tabs between Birmas Server and Direct ERP -->
+        <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <button
+            @click="birmasSyncTab = 'birmas'"
+            type="button"
+            class="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all text-center cursor-pointer"
+            :class="birmasSyncTab === 'birmas' ? 'bg-white text-teal-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
+          >
+            Birmas Server (Recommended)
+          </button>
+          <button
+            @click="birmasSyncTab = 'curl'"
+            type="button"
+            class="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all text-center cursor-pointer"
+            :class="birmasSyncTab === 'curl' ? 'bg-white text-teal-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
+          >
+            ESB ERP Session cURL
+          </button>
         </div>
 
-        <div class="space-y-2">
-          <label class="text-xs font-bold text-slate-700 block">
-            Update Session (Paste cURL from Chrome DevTools)
-          </label>
-          <p class="text-[11px] text-slate-500">
-            If your session ever expires in the future, simply Right-Click the <code class="bg-slate-100 px-1 py-0.5 rounded text-teal-800">stock-period</code> request in DevTools &gt; Copy as cURL, and paste it here:
-          </p>
-          <textarea
-            v-model="rawCurlInput"
-            rows="4"
-            placeholder="curl --url 'https://erp.esb.co.id/stock-period?...' -b '...' -H '...'"
-            class="w-full text-xs font-mono p-3 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:border-teal-500 text-slate-800 resize-none"
-          ></textarea>
+        <!-- TAB 1: Birmas Server Sync -->
+        <div v-if="birmasSyncTab === 'birmas'" class="space-y-4">
+          <div class="p-3.5 rounded-xl bg-teal-50 border border-teal-200 text-xs text-teal-900 flex items-start gap-2.5">
+            <CheckCircle2 class="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+            <div>
+              <span class="font-bold block">Source: Birmas Central Server</span>
+              <span class="text-teal-700 text-[11px] block mt-0.5">Connected to https://admin.birmas.id (Direct ESB API integration, no cookies needed)</span>
+            </div>
+          </div>
+
+          <div class="space-y-1.5">
+            <label class="text-xs font-bold text-slate-700 block">
+              Birmas Server URL or IP Address:
+            </label>
+            <div class="flex items-center gap-2">
+              <input
+                v-model="birmasServerUrlInput"
+                type="text"
+                placeholder="https://admin.birmas.id or http://103.xxx.xxx.xxx"
+                class="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-800 focus:outline-none focus:border-teal-500"
+              />
+            </div>
+            <p class="text-[11px] text-slate-400">
+              Supports domain name (e.g. <code class="text-teal-700">https://admin.birmas.id</code>) or direct server IP (e.g. <code class="text-teal-700">http://103.x.x.x:8000</code>).
+            </p>
+          </div>
+
+          <div class="text-xs text-slate-600 space-y-1.5 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+            <p class="font-bold text-slate-800">Why pull from Birmas Server?</p>
+            <p class="text-[11px] leading-relaxed text-slate-600">
+              The Birmas server is configured with direct, authorized access to the official ESB API. Pulling data from the Birmas server refreshes stock for all 4 stores automatically without expiring session cookies or manual cURL exports.
+            </p>
+          </div>
+
+          <button
+            @click="handleBirmasServerSync"
+            :disabled="isSyncing || isSyncingBirmas"
+            type="button"
+            class="w-full py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-teal-600/20 disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': isSyncing || isSyncingBirmas }" />
+            <span>{{ isSyncing || isSyncingBirmas ? 'Pulling Data from Birmas Server...' : 'Pull Fresh Stock from Birmas Server Now' }}</span>
+          </button>
+        </div>
+
+        <!-- TAB 2: Direct ESB ERP Session cURL -->
+        <div v-else class="space-y-4">
+          <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2.5">
+            <CheckCircle2 class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            <div>
+              <span class="font-bold block">Status: Connected to PT. Birmas Merubah Persepsi</span>
+              <span class="text-slate-600 text-[11px] block mt-0.5">User: BRMPhillip (KUNINGAN Branch #3, 283 items)</span>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <label class="text-xs font-bold text-slate-700 block">
+              Update Session (Paste cURL from Chrome DevTools)
+            </label>
+            <p class="text-[11px] text-slate-500">
+              If your session ever expires in the future, simply Right-Click the <code class="bg-slate-100 px-1 py-0.5 rounded text-teal-800">stock-period</code> request in DevTools &gt; Copy as cURL, and paste it here:
+            </p>
+            <textarea
+              v-model="rawCurlInput"
+              rows="4"
+              placeholder="curl --url 'https://erp.esb.co.id/stock-period?...' -b '...' -H '...'"
+              class="w-full text-xs font-mono p-3 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:border-teal-500 text-slate-800 resize-none"
+            ></textarea>
+          </div>
+
+          <div class="flex items-center justify-end gap-2.5 pt-2">
+            <button
+              @click="isSessionModalOpen = false"
+              type="button"
+              class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
+            >
+              Close
+            </button>
+            <button
+              @click="saveSessionFromCurl"
+              :disabled="!rawCurlInput.trim() || isSavingSession"
+              type="button"
+              class="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-teal-600/20 disabled:opacity-50"
+            >
+              <CheckCircle2 class="w-4 h-4" />
+              <span>{{ isSavingSession ? 'Updating & Syncing...' : 'Update Session' }}</span>
+            </button>
+          </div>
         </div>
 
         <div v-if="sessionStatusMsg" class="p-3 rounded-xl text-xs font-medium bg-teal-50 text-teal-900 border border-teal-200">
           {{ sessionStatusMsg }}
-        </div>
-
-        <div class="flex items-center justify-end gap-2.5 pt-2">
-          <button
-            @click="isSessionModalOpen = false"
-            type="button"
-            class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
-          >
-            Close
-          </button>
-          <button
-            @click="saveSessionFromCurl"
-            :disabled="!rawCurlInput.trim() || isSavingSession"
-            type="button"
-            class="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-teal-600/20 disabled:opacity-50"
-          >
-            <CheckCircle2 class="w-4 h-4" />
-            <span>{{ isSavingSession ? 'Updating & Syncing...' : 'Update Session' }}</span>
-          </button>
         </div>
       </div>
     </div>
